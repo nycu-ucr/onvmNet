@@ -20,22 +20,24 @@ get_pkt_udp_hdr(struct rte_mbuf* pkt) {
     uint8_t* pkt_data = rte_pktmbuf_mtod(pkt, uint8_t*) + sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
     return (struct udp_hdr*)pkt_data;
 }
-extern int onvmInit();
+extern int onvmInit(struct onvm_nf_local_ctx *, int);
 */
 import "C"
 
 import (
     "fmt"
     "net"
+    "io/ioutil"
 
     "gopkg.in/yaml.v2"
 )
 
 var udpChan = make(chan * C.struct_rte_mbuf, 1)
+var pktmbuf_pool * C.struct_rte_mempool
 var pktCount int
 
 type Config struct {
-    ServiceId: int `yaml:"serviceID"`
+    ServiceID int32 `yaml:"serviceID"`
 }
 
 type OnvmConn struct {
@@ -58,27 +60,30 @@ func Handler(pkt * C.struct_rte_mbuf, meta * C.struct_onvm_pkt_meta,
     return 0;
 }
 
-func ListenUDP(network string, laddr *net.UDPAddr) {
+func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
     // Read Config
-    yamlFile, _ := ioutil.ReadFile("udp.yaml")
     var config Config
-    yaml.Unmarshal(yamlFile, config)
+    if yamlFile, err := ioutil.ReadFile("udp.yaml"); err != nil {
+        panic(err)
+    } else {
+        yaml.Unmarshal(yamlFile, config)
+    }
 
     conn := &OnvmConn {
     }
 
-    C.onvmInit(conn.nf_ctx)
+    C.onvmInit(conn.nf_ctx, C.int(config.ServiceID))
 
     pktmbuf_pool = C.rte_mempool_lookup(C.CString("MProc_pktmbuf_pool"));
     if (pktmbuf_pool == nil) {
-        return -1
+        return nil, fmt.Errorf("pkt alloc from pool failed")
     }
 
     go conn.udpHandler()
     go C.onvm_nflib_run(conn.nf_ctx);
 
     fmt.Printf("ListenUDP: %s\n", network)
-    return 0;
+    return conn, nil;
 }
 
 func (conn * OnvmConn)Close() {

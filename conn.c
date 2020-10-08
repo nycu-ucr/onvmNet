@@ -2,10 +2,11 @@
 #include "_cgo_export.h"
 
 #define NF_TAG "go-nf"
+#define SERVICE_ID_DIGIT 10
 
 //typedef int GoInt;
 
-int onvmInit(struct onvm_nf_local_ctx *nf_local_ctx) {
+int onvmInit(struct onvm_nf_local_ctx *nf_local_ctx, int serviceId) {
     int arg_offset;
     struct onvm_nf_function_table *nf_function_table;
 
@@ -15,7 +16,10 @@ int onvmInit(struct onvm_nf_local_ctx *nf_local_ctx) {
     nf_function_table = onvm_nflib_init_nf_function_table();
     nf_function_table->pkt_handler = &Handler;
 
-    if ((arg_offset = onvm_nflib_init(argc, argv, NF_TAG, nf_local_ctx, nf_function_table)) < 0) {
+    char service_id_str[SERVICE_ID_DIGIT];
+    sprintf(service_id_str, "%d", serviceId);
+    char * cmd[2] = {"./go.sh", service_id_str};
+    if ((arg_offset = onvm_nflib_init(2, cmd, NF_TAG, nf_local_ctx, nf_function_table)) < 0) {
             onvm_nflib_stop(nf_local_ctx);
             if (arg_offset == ONVM_SIGNAL_TERMINATION) {
                     printf("Exiting due to user termination\n");
