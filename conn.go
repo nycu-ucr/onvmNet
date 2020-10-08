@@ -27,10 +27,16 @@ import "C"
 import (
     "fmt"
     "net"
+
+    "gopkg.in/yaml.v2"
 )
 
 var udpChan = make(chan * C.struct_rte_mbuf, 1)
 var pktCount int
+
+type Config struct {
+    ServiceId: int `yaml:"serviceID"`
+}
 
 type OnvmConn struct {
     nf_ctx * C.struct_onvm_nf_local_ctx
@@ -53,6 +59,11 @@ func Handler(pkt * C.struct_rte_mbuf, meta * C.struct_onvm_pkt_meta,
 }
 
 func ListenUDP(network string, laddr *net.UDPAddr) {
+    // Read Config
+    yamlFile, _ := ioutil.ReadFile("udp.yaml")
+    var config Config
+    yaml.Unmarshal(yamlFile, config)
+
     conn := &OnvmConn {
     }
 

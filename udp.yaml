@@ -1,0 +1,9 @@
+serviceID: 1
+
+core:
+  - statics: 0
+  - tx: 1
+  - rx: 2
+
+port:
+  - port: 0xF8
