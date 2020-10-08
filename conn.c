@@ -3,6 +3,8 @@
 
 #define NF_TAG "go-nf"
 
+//typedef int GoInt;
+
 int onvmInit(struct onvm_nf_local_ctx *nf_local_ctx) {
     int arg_offset;
     struct onvm_nf_function_table *nf_function_table;

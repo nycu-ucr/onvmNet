@@ -39,7 +39,7 @@ type OnvmConn struct {
 
 //export Handler
 func Handler(pkt * C.struct_rte_mbuf, meta * C.struct_onvm_pkt_meta,
-                    nf_local_ctx * C.struct_onvm_nf_local_ctx) int {
+                    nf_local_ctx * C.struct_onvm_nf_local_ctx) int32 {
     pktCount++
     fmt.Println("packet received!")
     meta.action = C.ONVM_NF_ACTION_DROP
