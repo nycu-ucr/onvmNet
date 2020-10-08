@@ -1,4 +1,4 @@
-package goConn
+package onvmNet
 
 // #cgo CFLAGS: -I/home/ubuntu/openNetVM/onvm/onvm_nflib
 // #cgo CFLAGS: -I/home/ubuntu/openNetVM/onvm/lib
@@ -6,11 +6,27 @@ package goConn
 // #cgo LDFLAGS: /home/ubuntu/openNetVM/onvm/onvm_nflib/x86_64-native-linuxapp-gcc/libonvm.a
 // #cgo LDFLAGS: /home/ubuntu/openNetVM/onvm/lib/x86_64-native-linuxapp-gcc/lib/libonvmhelper.a -lm
 /*
+#include <stdlib.h>
+#include <rte_lcore.h>
+#include <rte_common.h>
+#include <rte_ip.h>
+#include <rte_udp.h>
+#include <rte_mbuf.h>
+#include <onvm_nflib.h>
+#include <onvm_pkt_helper.h>
+
+static inline struct udp_hdr*
+get_pkt_udp_hdr(struct rte_mbuf* pkt) {
+    uint8_t* pkt_data = rte_pktmbuf_mtod(pkt, uint8_t*) + sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
+    return (struct udp_hdr*)pkt_data;
+}
 extern int onvmInit();
 */
 import "C"
+
 import (
     "fmt"
+    "net"
 )
 
 var udpChan = make(chan * C.struct_rte_mbuf, 1)
@@ -36,8 +52,7 @@ func Handler(pkt * C.struct_rte_mbuf, meta * C.struct_onvm_pkt_meta,
     return 0;
 }
 
-//export ListenUDP
-func ListenUDP(network string,laddr *net.UDPAddr) {
+func ListenUDP(network string, laddr *net.UDPAddr) {
     conn := &OnvmConn {
     }
 
@@ -55,7 +70,6 @@ func ListenUDP(network string,laddr *net.UDPAddr) {
     return 0;
 }
 
-//export Close
 func (conn * OnvmConn)Close() {
 
     C.onvm_nflib_stop(conn.nf_ctx)
