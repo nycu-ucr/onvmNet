@@ -28,11 +28,14 @@ import (
     "fmt"
     "net"
     "io/ioutil"
+    "unsafe"
 
     "gopkg.in/yaml.v2"
 )
 
 var udpChan = make(chan * C.struct_rte_mbuf, 1)
+var handToReadChan = make(chan * C.struct_rte_mbuf,1)
+
 var pktmbuf_pool * C.struct_rte_mempool
 var pktCount int
 
@@ -43,6 +46,7 @@ type Config struct {
 type OnvmConn struct {
     nf_ctx * C.struct_onvm_nf_local_ctx
     udpChan chan * C.struct_rte_mbuf
+    handToReadChan chan * C.struct_rte_mbuf
 }
 
 //export Handler
@@ -94,10 +98,48 @@ func (conn * OnvmConn)Close() {
 }
 
 func (conn * OnvmConn)udpHandler() {
+    var relayBuf * C.struct_rte_mbuf
     for {
         select {
-            case <- udpChan:
+            case relayBuf = <- udpChan:
               fmt.Println("Receive UDP")
+              handToReadChan <- relayBuf//send it to readfromudp
         }
     }
 }
+
+func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
+    var addr C.struct_sockaddr_in
+    var success_send_len int
+    success_send_len = 0//???ONVM has functon to get it?
+    tempbuffer:=marshalUDP(b,addr)//haven't done
+    //send the message to where???????
+    C.ONVMSEND(&tempbuffer[0],conn.nf_ctx)
+
+    return success_send_len,nil
+}
+
+func (conn * OnvmConn) ReadFromUDP(b []byte)(int,*net.UDPAddr,error){
+    buf := make([]byte,1500)
+    var buffer_ptr *C.char
+    buffer_ptr = C.CString(buf)
+    var onvm_addr * C.struct_rte_mbuf
+    onvm_addr = <-conn.handToReadChan
+    var recv_length = 0 //????????onvm has function to get the length of buffer
+    C.memcpy(unsafe.Pointer(buffer_ptr),unsafe.Pointer(onvm_addr),recv_length)//??length not sure
+    //C.memcpy(unsafe.Pointer(&b[0]),unsafe.Pointer(onvm_addr),1500)//??length not sure
+    buf = C.GoString(buffer_ptr)
+    raddr := unMarshalUDP()
+
+    return recv_length,raddr,nil
+
+}
+func marshalUDP(b []byte,addr *net.UDPAddr)(output []byte){
+    //wrapper payload with layer2 and layer3
+    return
+}
+func unMarshalUDP(input []byte,output []byte)(*net.UDPAddr){
+    //Unmarshaludp header and get the information(ip port) from header
+    return nil
+}
+
