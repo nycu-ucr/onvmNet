@@ -38,9 +38,14 @@ func Hi() {
   fmt.Println("Hi")
 }
 
-var udpChan = make(chan *C.struct_rte_mbuf, 1)
+var udpChan = make(chan EthFrame, 1)
 var pktmbuf_pool *C.struct_rte_mempool
 var pktCount int
+
+type EthFrame struct {
+  frame *C.struct_rte_mbuf
+  frame_len int
+}
 
 type Config struct {
 	ServiceID int32 `yaml:"serviceID"`
@@ -52,7 +57,7 @@ type Config struct {
 
 type OnvmConn struct {
 	nf_ctx  *C.struct_onvm_nf_local_ctx
-	udpChan chan *C.struct_rte_mbuf
+	udpChan chan EthFrame
 }
 
 //export Handler
@@ -65,7 +70,7 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	udp_hdr := C.get_pkt_udp_hdr(pkt)
 
 	if udp_hdr.dst_port == 2125 {
-		udpChan <- pkt
+		udpChan <- EthFrame { pkt, int(C.rte_pktmbuf_data_len(pkt)) }
 	}
 	return 0
 }
