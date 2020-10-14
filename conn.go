@@ -1,10 +1,12 @@
 package onvmNet
 
-// #cgo CFLAGS: -I/home/ubuntu/openNetVM/onvm/onvm_nflib
+// //#cgo CFLAGS: -I/home/ubuntu/openNetVM/onvm/onvm_nflib
+// //#cgo CFLAGS: -I/home/ubuntu/openNetVM/onvm/lib
+// //#cgo CFLAGS: -I/home/ubuntu/openNetVM/dpdk/x86_64-native-linuxapp-gcc/include
 // #cgo CFLAGS: -I/home/ubuntu/openNetVM/onvm/lib
-// #cgo CFLAGS: -I/home/ubuntu/openNetVM/dpdk/x86_64-native-linuxapp-gcc/include
 // #cgo LDFLAGS: /home/ubuntu/openNetVM/onvm/onvm_nflib/x86_64-native-linuxapp-gcc/libonvm.a
-// #cgo LDFLAGS: /home/ubuntu/openNetVM/onvm/lib/x86_64-native-linuxapp-gcc/lib/libonvmhelper.a -lm
+// #cgo LDFLAGS: /home/ubuntu/openNetVM/onvm/lib/x86_64-native-linuxapp-gcc/lib/libonvmhelper.a
+// #cgo LDFLAGS: -Wl,--allow-multiple-definition
 /*
 #include <stdlib.h>
 #include <rte_lcore.h>
@@ -25,79 +27,96 @@ extern int onvmInit(struct onvm_nf_local_ctx *, int);
 import "C"
 
 import (
-    "fmt"
-    "net"
-    "io/ioutil"
+	"fmt"
+	"io/ioutil"
+	"net"
 
-    "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
-var udpChan = make(chan * C.struct_rte_mbuf, 1)
-var pktmbuf_pool * C.struct_rte_mempool
+func Hi() {
+  fmt.Println("Hi")
+}
+
+var udpChan = make(chan *C.struct_rte_mbuf, 1)
+var pktmbuf_pool *C.struct_rte_mempool
 var pktCount int
 
 type Config struct {
-    ServiceID int32 `yaml:"serviceID"`
+	ServiceID int32 `yaml:"serviceID"`
+	IPIDMap   []struct {
+		IP string `yaml:"IP"`
+		ID int32  `yaml:"ID"`
+	} `yaml:"IPIDMap"`
 }
 
 type OnvmConn struct {
-    nf_ctx * C.struct_onvm_nf_local_ctx
-    udpChan chan * C.struct_rte_mbuf
+	nf_ctx  *C.struct_onvm_nf_local_ctx
+	udpChan chan *C.struct_rte_mbuf
 }
 
 //export Handler
-func Handler(pkt * C.struct_rte_mbuf, meta * C.struct_onvm_pkt_meta,
-                    nf_local_ctx * C.struct_onvm_nf_local_ctx) int32 {
-    pktCount++
-    fmt.Println("packet received!")
-    meta.action = C.ONVM_NF_ACTION_DROP
+func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
+	nf_local_ctx *C.struct_onvm_nf_local_ctx) int32 {
+	pktCount++
+	fmt.Println("packet received!")
+	meta.action = C.ONVM_NF_ACTION_DROP
 
-    udp_hdr := C.get_pkt_udp_hdr(pkt);
+	udp_hdr := C.get_pkt_udp_hdr(pkt)
 
-    if udp_hdr.dst_port == 2125 {
-        udpChan <- pkt
-    }
-    return 0;
+	if udp_hdr.dst_port == 2125 {
+		udpChan <- pkt
+	}
+	return 0
+}
+
+func (conn *OnvmConn) udpHandler() {
+	for {
+		select {
+		case <-udpChan:
+			fmt.Println("Receive UDP")
+		}
+	}
 }
 
 func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
-    // Read Config
-    var config Config
-    if yamlFile, err := ioutil.ReadFile("udp.yaml"); err != nil {
-        panic(err)
-    } else {
-        yaml.Unmarshal(yamlFile, config)
-    }
+	// Read Config
+	var config Config
+	if yamlFile, err := ioutil.ReadFile("udp.yaml"); err != nil {
+		panic(err)
+	} else {
+		yaml.Unmarshal(yamlFile, config)
+	}
 
-    conn := &OnvmConn {
-    }
+	conn := &OnvmConn{}
 
-    C.onvmInit(conn.nf_ctx, C.int(config.ServiceID))
+	//C.onvmInit(conn.nf_ctx, C.int(config.ServiceID))
+  C.onvmInit(conn.nf_ctx, C.int(1))
 
-    pktmbuf_pool = C.rte_mempool_lookup(C.CString("MProc_pktmbuf_pool"));
-    if (pktmbuf_pool == nil) {
-        return nil, fmt.Errorf("pkt alloc from pool failed")
-    }
+	pktmbuf_pool = C.rte_mempool_lookup(C.CString("MProc_pktmbuf_pool"))
+	if pktmbuf_pool == nil {
+		return nil, fmt.Errorf("pkt alloc from pool failed")
+	}
 
-    go conn.udpHandler()
-    go C.onvm_nflib_run(conn.nf_ctx);
+	go conn.udpHandler()
+	go C.onvm_nflib_run(conn.nf_ctx)
 
-    fmt.Printf("ListenUDP: %s\n", network)
-    return conn, nil;
+	fmt.Printf("ListenUDP: %s\n", network)
+	return conn, nil
 }
 
-func (conn * OnvmConn)Close() {
+//func (conn * OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
+//}
 
-    C.onvm_nflib_stop(conn.nf_ctx)
+//func (conn * OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
+//}
 
-    fmt.Println("Close onvm UDP")
-}
+//func (conn * OnvmConn) LocalAddr() (laddr net.Addr) {
+//}
 
-func (conn * OnvmConn)udpHandler() {
-    for {
-        select {
-            case <- udpChan:
-              fmt.Println("Receive UDP")
-        }
-    }
+func (conn *OnvmConn) Close() {
+
+	C.onvm_nflib_stop(conn.nf_ctx)
+
+	fmt.Println("Close onvm UDP")
 }
