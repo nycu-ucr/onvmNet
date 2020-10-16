@@ -7,7 +7,7 @@
 //typedef int GoInt;
 //extern int Handler(struct rte_mbuf*, struct onvm_pkt_meta*, struct onvm_nf_local_ctx*);
 
-int onvmInit(struct onvm_nf_local_ctx *nf_local_ctx, int serviceId) {
+int onvm_init(struct onvm_nf_local_ctx *nf_local_ctx, int serviceId) {
     int arg_offset;
     struct onvm_nf_function_table *nf_function_table;
 
@@ -32,3 +32,7 @@ int onvmInit(struct onvm_nf_local_ctx *nf_local_ctx, int serviceId) {
 
     return 0;
 }
+
+void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx) {
+}
+

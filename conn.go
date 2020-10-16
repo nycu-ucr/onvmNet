@@ -23,7 +23,8 @@ get_pkt_udp_hdr(struct rte_mbuf* pkt) {
     uint8_t* pkt_data = rte_pktmbuf_mtod(pkt, uint8_t*) + sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
     return (struct udp_hdr*)pkt_data;
 }
-extern int onvmInit(struct onvm_nf_local_ctx *, int);
+extern int onvm_init(struct onvm_nf_local_ctx *, int);
+extern void onvm_send_pkt(char *, int, struct onvm_nf_local_ctx *);
 */
 import "C"
 
@@ -31,6 +32,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	//"unsafe"
 	"os"
 
 	"gopkg.in/yaml.v2"
@@ -98,7 +100,7 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 
 	conn := &OnvmConn{}
 
-	C.onvmInit(conn.nf_ctx, C.int(config.ServiceID))
+	C.onvm_init(conn.nf_ctx, C.int(config.ServiceID))
 	//C.onvmInit(conn.nf_ctx, C.int(1))
 
 	pktmbuf_pool = C.rte_mempool_lookup(C.CString("MProc_pktmbuf_pool"))
@@ -113,12 +115,6 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	return conn, nil
 }
 
-//func (conn * OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
-//}
-
-//func (conn * OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
-//}
-
 //func (conn * OnvmConn) LocalAddr() (laddr net.Addr) {
 //}
 
@@ -128,39 +124,40 @@ func (conn *OnvmConn) Close() {
 
 	fmt.Println("Close onvm UDP")
 }
+/*
+func (conn *OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
+	var cAddr C.struct_sockaddr_in
+	var success_send_len int
+	success_send_len = 0              // ???ONVM has functon to get it?
+	tempbuffer := marshalUDP(b, addr) // haven't done
+	//send the message to where???????
+	serviceID := 1
+	C.onvm_send_pkt(unsafe.Pointer(&tempbuffer[0]), C.int(serviceID), conn.nf_ctx)
 
-func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
-    var addr C.struct_sockaddr_in
-    var success_send_len int
-    success_send_len = 0//???ONVM has functon to get it?
-    tempbuffer:=marshalUDP(b,addr)//haven't done
-    //send the message to where???????
-    C.ONVMSEND(&tempbuffer[0],conn.nf_ctx)
-
-    return success_send_len,nil
+	return success_send_len, nil
 }
 
-func (conn * OnvmConn) ReadFromUDP(b []byte)(int,*net.UDPAddr,error){
-    buf := make([]byte,1500)
-    var buffer_ptr *C.char
-    buffer_ptr = C.CString(buf)
-    var onvm_addr * C.struct_rte_mbuf
-    onvm_addr = <-conn.handToReadChan
-    var recv_length = 0 //????????onvm has function to get the length of buffer
-    C.memcpy(unsafe.Pointer(buffer_ptr),unsafe.Pointer(onvm_addr),recv_length)//??length not sure
-    //C.memcpy(unsafe.Pointer(&b[0]),unsafe.Pointer(onvm_addr),1500)//??length not sure
-    buf = C.GoString(buffer_ptr)
-    raddr := unMarshalUDP()
+func (conn *OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
+	buf := make([]byte, 1500)
+	var buffer_ptr *C.char
+	buffer_ptr = C.CString(buf)
+	var onvm_addr *C.struct_rte_mbuf
+	onvm_addr = <-conn.handToReadChan
+	var recv_length = 0                                                          // ????????onvm has function to get the length of buffer
+	C.memcpy(unsafe.Pointer(buffer_ptr), unsafe.Pointer(onvm_addr), C.ulong(recv_length)) // ??length not sure
+	//C.memcpy(unsafe.Pointer(&b[0]),unsafe.Pointer(onvm_addr),1500)               // ??length not sure
+	//buf = C.GoString(buffer_ptr)
+	//raddr := unMarshalUDP()
 
-    return recv_length,raddr,nil
+	return recv_length, raddr, nil
 
 }
-func marshalUDP(b []byte,addr *net.UDPAddr)(output []byte){
-    //wrapper payload with layer2 and layer3
-    return
+func marshalUDP(b []byte, addr *net.UDPAddr) (output []byte) {
+	//wrapper payload with layer2 and layer3
+	return
 }
-func unMarshalUDP(input []byte,output []byte)(*net.UDPAddr){
-    //Unmarshaludp header and get the information(ip port) from header
-    return nil
+func unMarshalUDP(input []byte, output []byte) *net.UDPAddr {
+	//Unmarshaludp header and get the information(ip port) from header
+	return nil
 }
-
+*/
