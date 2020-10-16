@@ -23,6 +23,10 @@ get_pkt_udp_hdr(struct rte_mbuf* pkt) {
     return (struct udp_hdr*)pkt_data;
 }
 extern int onvmInit(struct onvm_nf_local_ctx *, int);
+
+int ONVMSEND(char* bufPtr,struct onvm_nf_local_ctxconn nf_ctx,int id){
+	return 10;
+}
 */
 import "C"
 
@@ -30,7 +34,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-
+	"reflect"
+	"unsafe"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"gopkg.in/yaml.v2"
 )
 
@@ -39,6 +46,7 @@ func Hi() {
 }
 
 var udpChan = make(chan EthFrame, 1)
+var handToReadChan = make(chan EthFrame,1)
 var pktmbuf_pool *C.struct_rte_mempool
 var pktCount int
 
@@ -76,10 +84,12 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 }
 
 func (conn *OnvmConn) udpHandler() {
+	var relayBuf EthFrame
 	for {
 		select {
-		case <-udpChan:
+		case relayBuf = <-udpChan:
 			fmt.Println("Receive UDP")
+			handToReadChan <- relayBuf
 		}
 	}
 }
@@ -127,36 +137,118 @@ func (conn *OnvmConn) Close() {
 }
 
 func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
-    var addr C.struct_sockaddr_in
     var success_send_len int
+    var buffer_ptr *C.char //point to the head of byte data
     success_send_len = 0//???ONVM has functon to get it?
-    tempbuffer:=marshalUDP(b,addr)//haven't done
+    tempBuffer:= marshalUDP(b,addr)
+    buffer_ptr = getCPtrOfByteData(tempBuffer)
     //send the message to where???????
-    C.ONVMSEND(&tempbuffer[0],conn.nf_ctx)
+    success_send_len = C.ONVMSEND(buffer_ptr,conn.nf_ctx,10)//
 
     return success_send_len,nil
 }
 
 func (conn * OnvmConn) ReadFromUDP(b []byte)(int,*net.UDPAddr,error){
     buf := make([]byte,1500)
-    var buffer_ptr *C.char
-    buffer_ptr = C.CString(buf)
-    var onvm_addr * C.struct_rte_mbuf
-    onvm_addr = <-conn.handToReadChan
-    var recv_length = 0 //????????onvm has function to get the length of buffer
-    C.memcpy(unsafe.Pointer(buffer_ptr),unsafe.Pointer(onvm_addr),recv_length)//??length not sure
+    var ethFame EthFrame
+    ethFame = <- handToReadChan
+    var recvLength int //????????onvm has function to get the length of buffer --> yes
+    recvLength = ethFame.frame_len
+    buf = C.GoByte(unsafe.Pointer(ethFame.frame))
     //C.memcpy(unsafe.Pointer(&b[0]),unsafe.Pointer(onvm_addr),1500)//??length not sure
-    buf = C.GoString(buffer_ptr)
-    raddr := unMarshalUDP()
+    umsBuf,raddr := unMarshalUDP(buf)
 
-    return recv_length,raddr,nil
+    return recvLength,raddr,nil
 
 }
-func marshalUDP(b []byte,addr *net.UDPAddr)(output []byte){
+
+func marshalUDP(b []byte,addr *net.UDPAddr)([]byte){
+	fmt.Println("in marshal cap:",cap(b))
+	ifi ,err :=net.InterfaceByName("en0")
+	if err!=nil {
+		panic(err)
+	}
+	buffer := gopacket.NewSerializeBuffer()
+	options := gopacket.SerializeOptions{
+		ComputeChecksums: true,
+		FixLengths: true,
+	}
+
+	ethlayer := &layers.Ethernet{
+		SrcMAC: ifi.HardwareAddr,
+		DstMAC: net.HardwareAddr{0,0,0,0,0,0},
+		EthernetType: layers.EthernetTypeIPv4,
+	}
+
+	iplayer := &layers.IPv4{
+		Version:uint8(4),
+		SrcIP: addr.IP,
+		DstIP: net.IP{192,168,0,1},
+		TTL: 64,
+		Protocol: layers.IPProtocolUDP,
+	}
+
+	udplayer := &layers.UDP{
+		SrcPort: layers.UDPPort(addr.Port),
+		DstPort: layers.UDPPort(80),
+	}
+	udplayer.SetNetworkLayerForChecksum(iplayer)
+	err =gopacket.SerializeLayers(buffer,options,
+		ethlayer,
+		iplayer,
+		udplayer,
+		gopacket.Payload(b),
+	)
+	if err != nil{
+		panic(err)
+	}
+	outgoingpacket := buffer.Bytes()
+	return outgoingpacket
+
+}
+
+func getCPtrOfByteData(b []byte) *C.char{
+	shdr := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	ptr := (*C.char)(unsafe.Pointer(shdr.Data))
+	//runtime alive?
+	return ptr
+}
+
+func unMarshalUDP(input []byte)(payLoad []byte,rAddr *net.UDPAddr){
+	//Unmarshaludp header and get the information(ip port) from header
+	var rPort int
+	var rIp net.IP
+	ethPacket :=gopacket.NewPacket(
+		input,
+		layers.LayerTypeEthernet,
+		gopacket.Default)//this may be type zero copy
+
+	ipLayer := ethPacket.Layer(layers.LayerTypeIPv4)
+
+	if ipLayer != nil{
+		ip,_:=ipLayer.(*layers.IPv4)
+		rIp = ip.SrcIP
+	}
+	udpLayer := ethPacket.Layer(layers.LayerTypeUDP)
+	if udpLayer != nil{
+		udp,_ := udpLayer.(*layers.UDP)
+		rPort = int(udp.SrcPort)
+		payLoad = udp.Payload
+	}
+
+	rAddr = &net.UDPAddr{
+		IP: rIp,
+		Port: rPort,
+	}
+
+	return
+}
+
+func mMarshalUDP(b []byte,addr *net.UDPAddr)(output []byte){
     //wrapper payload with layer2 and layer3
     return
 }
-func unMarshalUDP(input []byte,output []byte)(*net.UDPAddr){
+func uUnMarshalUDP(input []byte,output []byte)(*net.UDPAddr){
     //Unmarshaludp header and get the information(ip port) from header
     return nil
 }
