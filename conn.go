@@ -49,6 +49,7 @@ var udpChan = make(chan EthFrame, 1)
 var handToReadChan = make(chan EthFrame,1)
 var pktmbuf_pool *C.struct_rte_mempool
 var pktCount int
+var config Config
 
 type EthFrame struct {
   frame *C.struct_rte_mbuf
@@ -66,7 +67,6 @@ type Config struct {
 type OnvmConn struct {
 	nf_ctx  *C.struct_onvm_nf_local_ctx
 	udpChan chan EthFrame
-	config Config
 }
 
 //export Handler
@@ -98,11 +98,10 @@ func (conn *OnvmConn) udpHandler() {
 func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	conn := &OnvmConn{}
 	// Read Config
-	var config Config
 	if yamlFile, err := ioutil.ReadFile("udp.yaml"); err != nil {
 		panic(err)
 	} else {
-		yaml.Unmarshal(yamlFile, &conn.config)
+		yaml.Unmarshal(yamlFile, &config)
 	}
 
 	//C.onvmInit(conn.nf_ctx, C.int(config.ServiceID))
@@ -140,34 +139,31 @@ func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
     var success_send_len int
     var buffer_ptr *C.char //point to the head of byte data
     var ID int
-    ID = conn.ipToID(addr.IP)
+    ID = ipToID(addr.IP)
     success_send_len = 0//???ONVM has functon to get it?
     tempBuffer:= marshalUDP(b,addr)
     buffer_ptr = getCPtrOfByteData(tempBuffer)
     //send the message to where???????
-    success_send_len = C.ONVMSEND(buffer_ptr,conn.nf_ctx,C.int(ID))//
+    success_send_len = C.ONVMSEND(buffer_ptr,conn.nf_ctx,C.int(ID))//C.ONVMSEND havn't write
 
     return success_send_len,nil
 }
 
-func (conn * OnvmConn) ReadFromUDP(b []byte)(int,*net.UDPAddr,error){
-    buf := make([]byte,1500)
-    var ethFame EthFrame
+func (conn * OnvmConn) ReadFromUDP(b []byte)(recvLength int,*net.UDPAddr,error){
+	var ethFame EthFrame
     ethFame = <- handToReadChan
-    var recvLength int //????????onvm has function to get the length of buffer --> yes
     recvLength = ethFame.frame_len
-    buf = C.GoByte(unsafe.Pointer(ethFame.frame))
-    //C.memcpy(unsafe.Pointer(&b[0]),unsafe.Pointer(onvm_addr),1500)//??length not sure
+    buf := C.GoByte(unsafe.Pointer(ethFame.frame))
     umsBuf,raddr := unMarshalUDP(buf)
-
+    copy(b,umsBuf)
     return recvLength,raddr,nil
 
 }
 
-func (conn * OnvmConn) ipToID(ip net.IP)(Id int){
-	for i := range conn.config.IPIDMap{
-		if conn.config.IPIDMap[i].IP == ip.String(){
-			Id = int(conn.config.IPIDMap[i].ID)
+func ipToID(ip net.IP)(Id int){
+	for i := range config.IPIDMap{
+		if config.IPIDMap[i].IP == ip.String(){
+			Id = int(config.IPIDMap[i].ID)
 			break
 		}
 	}
