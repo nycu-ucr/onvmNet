@@ -128,3 +128,39 @@ func (conn *OnvmConn) Close() {
 
 	fmt.Println("Close onvm UDP")
 }
+
+func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
+    var addr C.struct_sockaddr_in
+    var success_send_len int
+    success_send_len = 0//???ONVM has functon to get it?
+    tempbuffer:=marshalUDP(b,addr)//haven't done
+    //send the message to where???????
+    C.ONVMSEND(&tempbuffer[0],conn.nf_ctx)
+
+    return success_send_len,nil
+}
+
+func (conn * OnvmConn) ReadFromUDP(b []byte)(int,*net.UDPAddr,error){
+    buf := make([]byte,1500)
+    var buffer_ptr *C.char
+    buffer_ptr = C.CString(buf)
+    var onvm_addr * C.struct_rte_mbuf
+    onvm_addr = <-conn.handToReadChan
+    var recv_length = 0 //????????onvm has function to get the length of buffer
+    C.memcpy(unsafe.Pointer(buffer_ptr),unsafe.Pointer(onvm_addr),recv_length)//??length not sure
+    //C.memcpy(unsafe.Pointer(&b[0]),unsafe.Pointer(onvm_addr),1500)//??length not sure
+    buf = C.GoString(buffer_ptr)
+    raddr := unMarshalUDP()
+
+    return recv_length,raddr,nil
+
+}
+func marshalUDP(b []byte,addr *net.UDPAddr)(output []byte){
+    //wrapper payload with layer2 and layer3
+    return
+}
+func unMarshalUDP(input []byte,output []byte)(*net.UDPAddr){
+    //Unmarshaludp header and get the information(ip port) from header
+    return nil
+}
+
