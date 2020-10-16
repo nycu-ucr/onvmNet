@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="81cd4b68-0bf0-4249-a127-7ed200d8f7a5" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/conn.go" beforeDir="false" afterPath="$PROJECT_DIR$/conn.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
