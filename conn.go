@@ -66,6 +66,7 @@ type Config struct {
 type OnvmConn struct {
 	nf_ctx  *C.struct_onvm_nf_local_ctx
 	udpChan chan EthFrame
+	config Config
 }
 
 //export Handler
@@ -95,15 +96,14 @@ func (conn *OnvmConn) udpHandler() {
 }
 
 func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
+	conn := &OnvmConn{}
 	// Read Config
 	var config Config
 	if yamlFile, err := ioutil.ReadFile("udp.yaml"); err != nil {
 		panic(err)
 	} else {
-		yaml.Unmarshal(yamlFile, config)
+		yaml.Unmarshal(yamlFile, &conn.config)
 	}
-
-	conn := &OnvmConn{}
 
 	//C.onvmInit(conn.nf_ctx, C.int(config.ServiceID))
   C.onvmInit(conn.nf_ctx, C.int(1))
@@ -139,11 +139,13 @@ func (conn *OnvmConn) Close() {
 func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
     var success_send_len int
     var buffer_ptr *C.char //point to the head of byte data
+    var ID int
+    ID = conn.ipToID(addr.IP)
     success_send_len = 0//???ONVM has functon to get it?
     tempBuffer:= marshalUDP(b,addr)
     buffer_ptr = getCPtrOfByteData(tempBuffer)
     //send the message to where???????
-    success_send_len = C.ONVMSEND(buffer_ptr,conn.nf_ctx,10)//
+    success_send_len = C.ONVMSEND(buffer_ptr,conn.nf_ctx,C.int(ID))//
 
     return success_send_len,nil
 }
@@ -160,6 +162,16 @@ func (conn * OnvmConn) ReadFromUDP(b []byte)(int,*net.UDPAddr,error){
 
     return recvLength,raddr,nil
 
+}
+
+func (conn * OnvmConn) ipToID(ip net.IP)(Id int){
+	for i := range conn.config.IPIDMap{
+		if conn.config.IPIDMap[i].IP == ip.String(){
+			Id = int(conn.config.IPIDMap[i].ID)
+			break
+		}
+	}
+	return
 }
 
 func marshalUDP(b []byte,addr *net.UDPAddr)([]byte){
@@ -243,6 +255,7 @@ func unMarshalUDP(input []byte)(payLoad []byte,rAddr *net.UDPAddr){
 
 	return
 }
+
 
 func mMarshalUDP(b []byte,addr *net.UDPAddr)(output []byte){
     //wrapper payload with layer2 and layer3
