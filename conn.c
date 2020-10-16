@@ -5,6 +5,7 @@
 #define SERVICE_ID_DIGIT 10
 
 //typedef int GoInt;
+//extern int Handler(struct rte_mbuf*, struct onvm_pkt_meta*, struct onvm_nf_local_ctx*);
 
 int onvmInit(struct onvm_nf_local_ctx *nf_local_ctx, int serviceId) {
     int arg_offset;
