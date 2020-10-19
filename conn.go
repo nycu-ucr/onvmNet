@@ -43,7 +43,7 @@ var udpChan = make(chan EthFrame, 1)
 var handToReadChan = make(chan EthFrame,1)
 var pktmbuf_pool *C.struct_rte_mempool
 var pktCount int
-var config Config
+var config = &Config{} //move config to global
 
 type EthFrame struct {
 	frame     *C.struct_rte_mbuf
@@ -91,11 +91,10 @@ func (conn *OnvmConn) udpHandler() {
 }
 
 func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
-	conn := &OnvmConn{}
 	// Read Config
 	dir, _ := os.Getwd()
 	fmt.Printf("Read config from %s/onvmNet/udp.yaml", dir)
-	config := &Config{}
+	//config := &Config{}//move to global
 	if yamlFile, err := ioutil.ReadFile("./onvmNet/udp.yaml"); err != nil {
 		panic(err)
 	} else {
@@ -135,12 +134,12 @@ func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
     var success_send_len int
     var buffer_ptr *C.char //point to the head of byte data
     var ID int
+	//look up table to get id 
     ID = ipToID(addr.IP)
-    success_send_len = 0//???ONVM has functon to get it?
+    success_send_len = 0//???ONVM has functon to get it?-->right now onvm_send_pkt return void
     tempBuffer:= marshalUDP(b,addr)
     buffer_ptr = getCPtrOfByteData(tempBuffer)
-    //send the message to where???????
-    success_send_len = C.ONVMSEND(buffer_ptr,conn.nf_ctx,C.int(ID))//C.ONVMSEND havn't write
+	C.onvm_send_pkt(buffer_ptr,C.int(ID),conn.nf_ctx)//C.onvm_send_pkt havn't write?
 
     return success_send_len,nil
 }
@@ -167,7 +166,7 @@ func ipToID(ip net.IP)(Id int){
 }
 
 func marshalUDP(b []byte,addr *net.UDPAddr)([]byte){
-	fmt.Println("in marshal cap:",cap(b))
+	//interfacebyname may need to modify,not en0
 	ifi ,err :=net.InterfaceByName("en0")
 	if err!=nil {
 		panic(err)
@@ -186,15 +185,15 @@ func marshalUDP(b []byte,addr *net.UDPAddr)([]byte){
 
 	iplayer := &layers.IPv4{
 		Version:uint8(4),
-		SrcIP: addr.IP,
-		DstIP: net.IP{192,168,0,1},
+		SrcIP: net.IP{127,0,0,1},
+		DstIP: addr.IP,
 		TTL: 64,
 		Protocol: layers.IPProtocolUDP,
 	}
 
 	udplayer := &layers.UDP{
-		SrcPort: layers.UDPPort(addr.Port),
-		DstPort: layers.UDPPort(80),
+		SrcPort: layers.UDPPort(1000),
+		DstPort: layers.UDPPort(addr.Port),
 	}
 	udplayer.SetNetworkLayerForChecksum(iplayer)
 	err =gopacket.SerializeLayers(buffer,options,
@@ -249,11 +248,3 @@ func unMarshalUDP(input []byte)(payLoad []byte,rAddr *net.UDPAddr){
 }
 
 
-func mMarshalUDP(b []byte,addr *net.UDPAddr)(output []byte){
-    //wrapper payload with layer2 and layer3
-    return
-}
-func uUnMarshalUDP(input []byte,output []byte)(*net.UDPAddr){
-    //Unmarshaludp header and get the information(ip port) from header
-    return nil
-}
