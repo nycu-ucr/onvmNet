@@ -60,6 +60,7 @@ type Config struct {
 }
 
 type OnvmConn struct {
+	laddr *net.UDPAddr
 	nf_ctx  *C.struct_onvm_nf_local_ctx
 	udpChan chan EthFrame
 }
@@ -105,6 +106,8 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	}
 
 	conn := &OnvmConn{}
+	//store local addr
+	conn.laddr = laddr
 
 	C.onvm_init(conn.nf_ctx, C.int(config.ServiceID))
 	//C.onvmInit(conn.nf_ctx, C.int(1))
@@ -138,7 +141,7 @@ func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
 	//look up table to get id 
     ID = ipToID(addr.IP)
     success_send_len = 0//???ONVM has functon to get it?-->right now onvm_send_pkt return void
-    tempBuffer:= marshalUDP(b,addr)
+    tempBuffer:= marshalUDP(b,addr,conn.laddr)
     buffer_ptr = getCPtrOfByteData(tempBuffer)
 	C.onvm_send_pkt(buffer_ptr,C.int(ID),conn.nf_ctx)//C.onvm_send_pkt havn't write?
 
@@ -167,7 +170,7 @@ func ipToID(ip net.IP)(Id int){
 	return
 }
 
-func marshalUDP(b []byte,addr *net.UDPAddr)([]byte){
+func marshalUDP(b []byte,raddr *net.UDPAddr,laddr *net.UDPAddr)([]byte){
 	//interfacebyname may need to modify,not en0
 	ifi ,err :=net.InterfaceByName("en0")
 	if err!=nil {
@@ -187,15 +190,15 @@ func marshalUDP(b []byte,addr *net.UDPAddr)([]byte){
 
 	iplayer := &layers.IPv4{
 		Version:uint8(4),
-		SrcIP: net.IP{127,0,0,1},
-		DstIP: addr.IP,
+		SrcIP: laddr.IP,
+		DstIP: raddr.IP,
 		TTL: 64,
 		Protocol: layers.IPProtocolUDP,
 	}
 
 	udplayer := &layers.UDP{
-		SrcPort: layers.UDPPort(1000),
-		DstPort: layers.UDPPort(addr.Port),
+		SrcPort: layers.UDPPort(laddr.Port),
+		DstPort: layers.UDPPort(raddr.Port),
 	}
 	udplayer.SetNetworkLayerForChecksum(iplayer)
 	err =gopacket.SerializeLayers(buffer,options,
