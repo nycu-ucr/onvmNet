@@ -3,8 +3,9 @@
 
 #define NF_TAG "go-nf"
 #define SERVICE_ID_DIGIT 10
+#define LOCAL_EXPERIMENTAL_ETHER 0x88B5
 
-static uint16_t packet_size = 64
+static uint16_t packet_size = 64;
 static uint8_t d_addr_bytes[ETHER_ADDR_LEN];
 
 //typedef int GoInt;
@@ -44,7 +45,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx) 
 	pkts_generated = 0;
 	pktmbuf_pool = rte_mempool_lookup(PKTMBUF_POOL_NAME);
 	if (pktmbuf_pool == NULL) {
-		onvm_nflib_stop(nf_local_ctx);
+		onvm_nflib_stop(ctx);
 		rte_exit(EXIT_FAILURE, "Cannot find mbuf pool!\n");
 	}
 
@@ -57,7 +58,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx) 
 	struct rte_mbuf *pkt = rte_pktmbuf_alloc(pktmbuf_pool);
 	if (pkt == NULL) {
 		printf("Failed to allocate packets\n");
-		return -1;
+		return;
 	}
 
 	/*set up ether header and set new packet size*/
@@ -79,7 +80,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx) 
 
 	// fill out the meta data of the packet
 	pmeta = onvm_get_pkt_meta(pkt);
-	pmeta->destination = service_ID;
+	pmeta->destination = service_id;
 	pmeta->action = ONVM_NF_ACTION_TONF;
 	//pmeta->flags = ONVM_SET_BIT(0, SPEED_TESTER_BIT);
 	//pkt->hash.rss = i;
@@ -87,21 +88,19 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx) 
 	pkt->port = 0;
 
 	/* Copy the packet into the rte_mbuf data section */
-	rte_memcpy(rte_pktmbuf_mtod(pkt, char *), buff, sizeof(msg));
+	rte_memcpy(rte_pktmbuf_mtod(pkt, char *), buff, sizeof(buff));
 	pkts_generated = 1;
 
 	// send out the generated packet
-	onvm_nflib_return_pkt(nf_local_ctx->nf, pkt);
+	onvm_nflib_return_pkt(ctx->nf, pkt);
 
 
 
 	/* Exit if packets were unexpectedly not created */
 	if (pkts_generated == 0) {
-		onvm_nflib_stop(nf_local_ctx);
+		onvm_nflib_stop(ctx);
 		rte_exit(EXIT_FAILURE, "Failed to create packets\n");
 	}
-
-	return 0;
 
 }
 
