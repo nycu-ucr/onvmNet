@@ -229,7 +229,7 @@ func unMarshalUDP(input []byte)(payLoad []byte,rAddr *net.UDPAddr){
 	ethPacket :=gopacket.NewPacket(
 		input,
 		layers.LayerTypeEthernet,
-		gopacket.Default)//this may be type zero copy
+		gopacket.NoCopy)//this may be type zero copy
 
 	ipLayer := ethPacket.Layer(layers.LayerTypeIPv4)
 
