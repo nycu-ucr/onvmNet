@@ -88,8 +88,6 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	nf_local_ctx *C.struct_onvm_nf_local_ctx) int32 {
 	pktCount++
 	fmt.Println("packet received!")
-	meta.action = C.ONVM_NF_ACTION_DROP
-
 //	udp_hdr := C.get_pkt_udp_hdr(pkt)
 /*
 	if udp_hdr.dst_port == 2125 {
@@ -98,9 +96,9 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	}
 */
 	/********************************************/
-	recvLen := 0 //length include header??
+	recvLen := 100 //length include header??//int(C.rte_pktmbuf_data_len(pkt))
 	headerLen := 0 //?header length
-    buf := C.GoBytes(unsafe.Pointer(pkt),C.int(recvLen))//turn c memory to go memory
+    buf := C.GoBytes(unsafe.Pointer(C.rte_pktmbuf_mtod(pkt, *C.uint8_t)),C.int(recvLen))//turn c memory to go memory
     umsBuf,raddr := unMarshalUDP(buf)
 	udpMeta := ConnMeta{
 		raddr.IP.String(),
@@ -120,6 +118,9 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	}else{
 		//drop packet(?)
 	}
+
+	meta.action = C.ONVM_NF_ACTION_DROP
+
 	return 0
 }
 

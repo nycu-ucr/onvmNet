@@ -37,7 +37,7 @@ int onvm_init(struct onvm_nf_local_ctx *nf_local_ctx, int serviceId) {
     return 0;
 }
 
-void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx) {
+void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,int buff_length) {
 	uint32_t i;
 	uint32_t pkts_generated;
 	struct rte_mempool *pktmbuf_pool;
@@ -62,7 +62,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx) 
 	}
 
 	/*set up ether header and set new packet size*/
-	ehdr = (struct ether_hdr *)rte_pktmbuf_append(pkt, packet_size);
+	ehdr = (struct ether_hdr *)rte_pktmbuf_append(pkt, buff_length);
 
 	/*using manager mac addr for source
 	 *using input string for dest addr
@@ -86,9 +86,9 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx) 
 	//pkt->hash.rss = i;
 	pkt->hash.rss = 0;
 	pkt->port = 0;
-
+    pkt->data_len=buff_length;//???
 	/* Copy the packet into the rte_mbuf data section */
-	rte_memcpy(rte_pktmbuf_mtod(pkt, char *), buff, sizeof(buff));
+	rte_memcpy(rte_pktmbuf_mtod(pkt, char *), buff, buff_length);
 	pkts_generated = 1;
 
 	// send out the generated packet
