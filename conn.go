@@ -46,10 +46,10 @@ var pktmbuf_pool *C.struct_rte_mempool
 var pktCount int
 var config = &Config{} //move config to global
 
-var channelMap = make(map[ConnMeta]chan PkeMeta) //map to hanndle each channel of connection
+var channelMap = make(map[ConnMeta]chan PktMeta) //map to hanndle each channel of connection
 
 //for each connection
-type ConnMeta{
+type ConnMeta struct {
 	ip string
 	port int
 	protocol int
@@ -90,7 +90,7 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	fmt.Println("packet received!")
 	meta.action = C.ONVM_NF_ACTION_DROP
 
-	udp_hdr := C.get_pkt_udp_hdr(pkt)
+//	udp_hdr := C.get_pkt_udp_hdr(pkt)
 /*
 	if udp_hdr.dst_port == 2125 {
 		//udpChan <- EthFrame { pkt, int(C.rte_pktmbuf_data_len(pkt)) }
@@ -100,25 +100,24 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	/********************************************/
 	recvLen := 0 //length include header??
 	headerLen := 0 //?header length
-    buf := C.GoBytes(unsafe.Pointer(pkt),C.int(recvLen+headLen))//turn c memory to go memory
+    buf := C.GoBytes(unsafe.Pointer(pkt),C.int(recvLen))//turn c memory to go memory
     umsBuf,raddr := unMarshalUDP(buf)
 	udpMeta := ConnMeta{
 		raddr.IP.String(),
 		raddr.Port,
 		17,
 	}
-	pktMeta := PkeMeta{
+	pktMeta := PktMeta{
 		raddr.IP,
 		raddr.Port,
-		recvLen+headerLen,
 		recvLen,
+		recvLen-headerLen,
 		&umsBuf,
 	}
 	channel , ok := channelMap[udpMeta]
-	if(ok){
+	if ok {
 		channel <- pktMeta
-	}
-	else{
+	}else{
 		//drop packet(?)
 	}
 	return 0
@@ -140,13 +139,13 @@ func (conn *OnvmConn) udpHandler() {
 */
 
 //to regist channel and it connection meta to map
-func (conn *OnvmConn)registChannel(laddr *net.UDPAddr){
+func (conn *OnvmConn)registerChannel(){
 	udpTuple := ConnMeta{
-		laddr.IP.String(),
-		laddr.Port,
+		conn.laddr.IP.String(),
+		conn.laddr.Port,
 		17,
 	}
-	conn.udpChan = make(chan PkeMeta,1)
+	conn.udpChan = make(chan PktMeta,1)
 	channelMap[udpTuple] = conn.udpChan
 }
 
@@ -167,7 +166,7 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	//store local addr
 	conn.laddr = laddr
 	//register
-	registChannel(laddr);
+	conn.registerChannel()
 
 	C.onvm_init(conn.nf_ctx, C.int(config.ServiceID))
 	//C.onvmInit(conn.nf_ctx, C.int(1))
@@ -184,18 +183,18 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	return conn, nil
 }
 
-func (conn * OnvmConn) LocalAddr() (*net.Addr) {
+func (conn * OnvmConn) LocalAddr() (net.Addr) {
 	laddr := conn.laddr
-	return
+	return laddr
 }
 
 func (conn *OnvmConn) Close() {
 
 	C.onvm_nflib_stop(conn.nf_ctx)
 	//deregister channel
-	udpMeta := &udp_meta{
-		laddr.IP.String(),
-		laddr.Port,
+	udpMeta := &ConnMeta{
+		conn.laddr.IP.String(),
+		conn.laddr.Port,
 		17,
 	}
 	delete(channelMap,*udpMeta)//delete from map
@@ -225,13 +224,13 @@ func (conn * OnvmConn) ReadFromUDP(b []byte)(int,*net.UDPAddr,error){
     buf := C.GoBytes(unsafe.Pointer(ethFame.frame),C.int(recvLength+header_len))
     umsBuf,raddr := unMarshalUDP(buf)
 */
-	var pktMeta PkeMeta
-	pktMeta <- udpChan
-	recvLength := pkeMeta.payloadLen
-    copy(b,*(pkeMeta.payloadPtr))
+	var pktMeta PktMeta
+	pktMeta  = <- conn.udpChan
+	recvLength := pktMeta.payloadLen
+    copy(b,*(pktMeta.payloadPtr))
 	raddr := &net.UDPAddr{
-		pktMeta.srcIp,
-		pktMeta.srcPort,
+		IP:	pktMeta.srcIp,
+		Port: pktMeta.srcPort,
 	}
     return recvLength,raddr,nil
 
