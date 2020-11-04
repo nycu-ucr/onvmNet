@@ -40,11 +40,28 @@ import (
 	"os"
 )
 
-var udpChan = make(chan EthFrame, 1)
-var handToReadChan = make(chan EthFrame,1)
+//var udpChan = make(chan EthFrame, 1)
+//var handToReadChan = make(chan EthFrame,1)
 var pktmbuf_pool *C.struct_rte_mempool
 var pktCount int
 var config = &Config{} //move config to global
+
+var channelMap = make(map[ConnMeta]chan PkeMeta) //map to hanndle each channel of connection
+
+//for each connection
+type ConnMeta{
+	ip string
+	port int
+	protocol int
+}
+
+type PktMeta struct {
+	srcIp net.IP
+	srcPort int
+	pktLen int//whole packet length include layer2,layer3,tcpudp
+	payloadLen int //packet length just include payload after tcpudp
+	payloadPtr *[]byte //the pointer to byte slice of payload
+}
 
 type EthFrame struct {
 	frame     *C.struct_rte_mbuf
@@ -62,7 +79,8 @@ type Config struct {
 type OnvmConn struct {
 	laddr *net.UDPAddr
 	nf_ctx  *C.struct_onvm_nf_local_ctx
-	udpChan chan EthFrame
+	//udpChan chan EthFrame
+	udpChan chan PktMeta
 }
 
 //export Handler
@@ -73,14 +91,42 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	meta.action = C.ONVM_NF_ACTION_DROP
 
 	udp_hdr := C.get_pkt_udp_hdr(pkt)
-
+/*
 	if udp_hdr.dst_port == 2125 {
 		//udpChan <- EthFrame { pkt, int(C.rte_pktmbuf_data_len(pkt)) }
 		udpChan <- EthFrame{pkt, 5}
 	}
+*/
+	/********************************************/
+	recvLen := 0 //length include header??
+	headerLen := 0 //?header length
+    buf := C.GoBytes(unsafe.Pointer(pkt),C.int(recvLen+headLen))//turn c memory to go memory
+    umsBuf,raddr := unMarshalUDP(buf)
+	udpMeta := ConnMeta{
+		raddr.IP.String(),
+		raddr.Port,
+		17,
+	}
+	pktMeta := PkeMeta{
+		raddr.IP,
+		raddr.Port,
+		recvLen+headerLen,
+		recvLen,
+		&umsBuf,
+	}
+	channel , ok := channelMap[udpMeta]
+	if(ok){
+		channel <- pktMeta
+	}
+	else{
+		//drop packet(?)
+	}
 	return 0
 }
 
+
+//may not use
+/*
 func (conn *OnvmConn) udpHandler() {
 	var relayBuf EthFrame
 	for {
@@ -90,6 +136,18 @@ func (conn *OnvmConn) udpHandler() {
 			handToReadChan <- relayBuf
 		}
 	}
+}
+*/
+
+//to regist channel and it connection meta to map
+func (conn *OnvmConn)registChannel(laddr *net.UDPAddr){
+	udpTuple := ConnMeta{
+		laddr.IP.String(),
+		laddr.Port,
+		17,
+	}
+	conn.udpChan = make(chan PkeMeta,1)
+	channelMap[udpTuple] = conn.udpChan
 }
 
 func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
@@ -108,6 +166,8 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	conn := &OnvmConn{}
 	//store local addr
 	conn.laddr = laddr
+	//register
+	registChannel(laddr);
 
 	C.onvm_init(conn.nf_ctx, C.int(config.ServiceID))
 	//C.onvmInit(conn.nf_ctx, C.int(1))
@@ -117,20 +177,28 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 		return nil, fmt.Errorf("pkt alloc from pool failed")
 	}
 
-	go conn.udpHandler()
+//	go conn.udpHandler() //no use
 	go C.onvm_nflib_run(conn.nf_ctx)
 
 	fmt.Printf("ListenUDP: %s\n", network)
 	return conn, nil
 }
 
-//func (conn * OnvmConn) LocalAddr() (laddr net.Addr) {
-//}
+func (conn * OnvmConn) LocalAddr() (*net.Addr) {
+	laddr := conn.laddr
+	return
+}
 
 func (conn *OnvmConn) Close() {
 
 	C.onvm_nflib_stop(conn.nf_ctx)
-
+	//deregister channel
+	udpMeta := &udp_meta{
+		laddr.IP.String(),
+		laddr.Port,
+		17,
+	}
+	delete(channelMap,*udpMeta)//delete from map
 	fmt.Println("Close onvm UDP")
 }
 
@@ -149,13 +217,22 @@ func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
 }
 
 func (conn * OnvmConn) ReadFromUDP(b []byte)(int,*net.UDPAddr,error){
+/*
 	var ethFame EthFrame
     ethFame = <- handToReadChan
     recvLength := ethFame.frame_len
 	header_len := 80//need to get whole length include layer23
     buf := C.GoBytes(unsafe.Pointer(ethFame.frame),C.int(recvLength+header_len))
     umsBuf,raddr := unMarshalUDP(buf)
-    copy(b,umsBuf)
+*/
+	var pktMeta PkeMeta
+	pktMeta <- udpChan
+	recvLength := pkeMeta.payloadLen
+    copy(b,*(pkeMeta.payloadPtr))
+	raddr := &net.UDPAddr{
+		pktMeta.srcIp,
+		pktMeta.srcPort,
+	}
     return recvLength,raddr,nil
 
 }
