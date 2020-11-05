@@ -58,7 +58,6 @@ type ConnMeta struct {
 type PktMeta struct {
 	srcIp net.IP
 	srcPort int
-	pktLen int//whole packet length include layer2,layer3,tcpudp
 	payloadLen int //packet length just include payload after tcpudp
 	payloadPtr *[]byte //the pointer to byte slice of payload
 }
@@ -96,8 +95,7 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	}
 */
 	/********************************************/
-	recvLen := 100 //length include header??//int(C.rte_pktmbuf_data_len(pkt))
-	headerLen := 0 //?header length
+	recvLen := int(C.rte_pktmbuf_data_len(pkt))//length include header??//int(C.rte_pktmbuf_data_len(pkt))
     buf := C.GoBytes(unsafe.Pointer(C.rte_pktmbuf_mtod(pkt, *C.uint8_t)),C.int(recvLen))//turn c memory to go memory
     umsBuf,raddr := unMarshalUDP(buf)
 	udpMeta := ConnMeta{
@@ -108,8 +106,7 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	pktMeta := PktMeta{
 		raddr.IP,
 		raddr.Port,
-		recvLen,
-		recvLen-headerLen,
+		len(umsBuf),
 		&umsBuf,
 	}
 	channel , ok := channelMap[udpMeta]
@@ -211,7 +208,7 @@ func (conn * OnvmConn) WriteToUDP(b []byte ,addr * net.UDPAddr)(int,error){
     success_send_len = 0//???ONVM has functon to get it?-->right now onvm_send_pkt return void
     tempBuffer:= marshalUDP(b,addr,conn.laddr)
     buffer_ptr = getCPtrOfByteData(tempBuffer)
-	C.onvm_send_pkt(buffer_ptr,C.int(ID),conn.nf_ctx)//C.onvm_send_pkt havn't write?
+	C.onvm_send_pkt(buffer_ptr,C.int(ID),conn.nf_ctx,C.int(len(tempBuffer)))//C.onvm_send_pkt havn't write?
 
     return success_send_len,nil
 }
