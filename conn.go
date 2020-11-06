@@ -246,10 +246,12 @@ func ipToID(ip net.IP)(Id int){
 
 func marshalUDP(b []byte,raddr *net.UDPAddr,laddr *net.UDPAddr)([]byte){
 	//interfacebyname may need to modify,not en0
+	/*
 	ifi ,err :=net.InterfaceByName("en0")
 	if err!=nil {
 		panic(err)
 	}
+	*/
 	buffer := gopacket.NewSerializeBuffer()
 	options := gopacket.SerializeOptions{
 		ComputeChecksums: true,
@@ -257,7 +259,7 @@ func marshalUDP(b []byte,raddr *net.UDPAddr,laddr *net.UDPAddr)([]byte){
 	}
 
 	ethlayer := &layers.Ethernet{
-		SrcMAC: ifi.HardwareAddr,
+		SrcMAC: net.HardwareAddr{0,0,0,0,0,0},
 		DstMAC: net.HardwareAddr{0,0,0,0,0,0},
 		EthernetType: layers.EthernetTypeIPv4,
 	}
