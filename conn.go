@@ -24,7 +24,7 @@ get_pkt_udp_hdr(struct rte_mbuf* pkt) {
     return (struct udp_hdr*)pkt_data;
 }
 extern int onvm_init(struct onvm_nf_local_ctx *, int);
-extern void onvm_send_pkt(char *, int, struct onvm_nf_local_ctx *);
+extern void onvm_send_pkt(char *, int, struct onvm_nf_local_ctx *,int);
 */
 import "C"
 
