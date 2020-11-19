@@ -1,13 +1,5 @@
 package onvmNet
 
-// #cgo CFLAGS: -m64 -pthread -O3 -march=native
-// #cgo CFLAGS: -I/root/openNetVM/onvm/onvm_nflib
-// #cgo CFLAGS: -I/root/openNetVM/onvm/lib
-// #cgo CFLAGS: -I/root/openNetVM/dpdk/x86_64-native-linuxapp-gcc/include
-// #cgo LDFLAGS: /root/openNetVM/onvm/onvm_nflib/x86_64-native-linuxapp-gcc/libonvm.a
-// #cgo LDFLAGS: /root/openNetVM/onvm/lib/x86_64-native-linuxapp-gcc/lib/libonvmhelper.a -lm
-// #cgo LDFLAGS: -L/root/openNetVM/dpdk/x86_64-native-linuxapp-gcc/lib
-// #cgo LDFLAGS: -lrte_flow_classify -Wl,--whole-archive -lrte_pipeline -Wl,--no-whole-archive -Wl,--whole-archive -lrte_table -Wl,--no-whole-archive -Wl,--whole-archive -lrte_port -Wl,--no-whole-archive -lrte_pdump -lrte_distributor -lrte_ip_frag -lrte_meter -lrte_lpm -Wl,--whole-archive -lrte_acl -Wl,--no-whole-archive -lrte_jobstats -lrte_metrics -lrte_bitratestats -lrte_latencystats -lrte_power -lrte_efd -lrte_bpf -Wl,--whole-archive -lrte_cfgfile -lrte_gro -lrte_gso -lrte_hash -lrte_member -lrte_vhost -lrte_kvargs -lrte_mbuf -lrte_net -lrte_ethdev -lrte_bbdev -lrte_cryptodev -lrte_security -lrte_compressdev -lrte_eventdev -lrte_rawdev -lrte_timer -lrte_mempool -lrte_mempool_ring -lrte_ring -lrte_pci -lrte_eal -lrte_cmdline -lrte_reorder -lrte_sched -lrte_kni -lrte_common_cpt -lrte_common_octeontx -lrte_common_dpaax -lrte_bus_pci -lrte_bus_vdev -lrte_bus_dpaa -lrte_bus_fslmc -lrte_mempool_bucket -lrte_mempool_stack -lrte_mempool_dpaa -lrte_mempool_dpaa2 -lrte_pmd_af_packet -lrte_pmd_ark -lrte_pmd_atlantic -lrte_pmd_avf -lrte_pmd_avp -lrte_pmd_axgbe -lrte_pmd_bnxt -lrte_pmd_bond -lrte_pmd_cxgbe -lrte_pmd_dpaa -lrte_pmd_dpaa2 -lrte_pmd_e1000 -lrte_pmd_ena -lrte_pmd_enetc -lrte_pmd_enic -lrte_pmd_fm10k -lrte_pmd_failsafe -lrte_pmd_i40e -lrte_pmd_ixgbe -lrte_pmd_kni -lrte_pmd_lio -lrte_pmd_nfp -lrte_pmd_null -lrte_pmd_qede -lrte_pmd_ring -lrte_pmd_softnic -lrte_pmd_sfc_efx -lrte_pmd_tap -lrte_pmd_thunderx_nicvf -lrte_pmd_vdev_netvsc -lrte_pmd_virtio -lrte_pmd_vhost -lrte_pmd_ifc -lrte_pmd_vmxnet3_uio -lrte_bus_vmbus -lrte_pmd_netvsc -lrte_pmd_bbdev_null -lrte_pmd_null_crypto -lrte_pmd_octeontx_crypto -lrte_pmd_crypto_scheduler -lrte_pmd_dpaa2_sec -lrte_pmd_dpaa_sec -lrte_pmd_caam_jr -lrte_pmd_virtio_crypto -lrte_pmd_octeontx_zip -lrte_pmd_qat -lrte_pmd_skeleton_event -lrte_pmd_sw_event -lrte_pmd_dsw_event -lrte_pmd_octeontx_ssovf -lrte_pmd_dpaa_event -lrte_pmd_dpaa2_event -lrte_mempool_octeontx -lrte_pmd_octeontx -lrte_pmd_opdl_event -lrte_pmd_skeleton_rawdev -lrte_pmd_dpaa2_cmdif -lrte_pmd_dpaa2_qdma -lrte_bus_ifpga -lrte_pmd_ifpga_rawdev -Wl,--no-whole-archive -lrt -lm -lnuma -ldl
 /*
 #include <stdlib.h>
 #include <rte_lcore.h>
@@ -31,7 +23,7 @@ static inline int pktmbuf_data_len_wrapper(struct rte_mbuf* pkt){
 static inline uint8_t* pktmbuf_mtod_wrapper(struct rte_mbuf* pkt){
 	return rte_pktmbuf_mtod(pkt,uint8_t*);
 }
-extern int onvm_init(struct onvm_nf_local_ctx **, int);
+extern int onvm_init(struct onvm_nf_local_ctx **);
 extern void onvm_send_pkt(char *, int, struct onvm_nf_local_ctx *,int);
 */
 import "C"
@@ -77,7 +69,7 @@ type EthFrame struct {
 }
 
 type Config struct {
-	ServiceID int `yaml:"serviceID"`
+	//ServiceID int `yaml:"serviceID"`
 	IPIDMap   []struct {
 		IP *string `yaml:"IP"`
 		ID *int32  `yaml:"ID"`
@@ -92,7 +84,7 @@ type OnvmConn struct {
 }
 
 func init() {
-	C.onvm_init(&conn.nf_ctx, C.int(config.ServiceID))
+	C.onvm_init(&conn.nf_ctx)
 }
 
 //export Handler
@@ -161,10 +153,18 @@ func (conn *OnvmConn) registerChannel() {
 
 func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	// Read Config
-	dir, _ := os.Getwd()
-	fmt.Printf("Read config from %s/onvmNet/udp.yaml", dir)
 	//config := &Config{}//move to global
-	if yamlFile, err := ioutil.ReadFile("./onvmNet/udp.yaml"); err != nil {
+	var ipIdConfig string
+	if dir, err := os.Getwd(); err != nil {
+		ipIdConfig = "./ipid.yaml"
+	} else {
+		ipIdConfig = dir + "/ipid.yaml"
+	}
+	if os.Getenv("IPIDConfig") != "" {
+		ipIdConfig = os.Getenv("IPIDConfig")
+	}
+	fmt.Printf("Read config from %s", ipIdConfig)
+	if yamlFile, err := ioutil.ReadFile(ipIdConfig); err != nil {
 		panic(err)
 	} else {
 		if unMarshalErr := yaml.Unmarshal(yamlFile, config); unMarshalErr != nil {
