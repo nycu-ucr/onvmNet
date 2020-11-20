@@ -37,16 +37,13 @@ import (
 	"net"
 	"os"
 	"reflect"
-	"time"
 	"unsafe"
 )
 
-//var udpChan = make(chan EthFrame, 1)
-//var handToReadChan = make(chan EthFrame,1)
 var pktmbuf_pool *C.struct_rte_mempool
 var pktCount int
 var config = &Config{} //move config to global
-
+var nf_ctx *C.struct_onvm_nf_local_ctx
 var channelMap = make(map[ConnMeta]chan PktMeta) //map to hanndle each channel of connection
 
 //for each connection
@@ -63,43 +60,27 @@ type PktMeta struct {
 	payloadPtr *[]byte //the pointer to byte slice of payload
 }
 
-type EthFrame struct {
-	frame     *C.struct_rte_mbuf
-	frame_len int
-}
-
 type Config struct {
 	//ServiceID int `yaml:"serviceID"`
-	IPIDMap   []struct {
+	IPIDMap []struct {
 		IP *string `yaml:"IP"`
 		ID *int32  `yaml:"ID"`
 	} `yaml:"IPIDMap"`
 }
 
 type OnvmConn struct {
-	laddr  *net.UDPAddr
-	nf_ctx *C.struct_onvm_nf_local_ctx
-	//udpChan chan EthFrame
+	laddr   *net.UDPAddr
 	udpChan chan PktMeta
 }
 
 func init() {
-	C.onvm_init(&conn.nf_ctx)
+	C.onvm_init(&nf_ctx)
 }
 
 //export Handler
 func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	nf_local_ctx *C.struct_onvm_nf_local_ctx) int32 {
 	pktCount++
-	fmt.Println("packet received!")
-	//	udp_hdr := C.get_pkt_udp_hdr(pkt)
-	/*
-		if udp_hdr.dst_port == 2125 {
-			//udpChan <- EthFrame { pkt, int(C.rte_pktmbuf_data_len(pkt)) }
-			udpChan <- EthFrame{pkt, 5}
-		}
-	*/
-	/********************************************/
 	recvLen := int(C.pktmbuf_data_len_wrapper(pkt))                               //length include header??//int(C.rte_pktmbuf_data_len(pkt))
 	buf := C.GoBytes(unsafe.Pointer(C.pktmbuf_mtod_wrapper(pkt)), C.int(recvLen)) //turn c memory to go memory
 	umsBuf, raddr := unMarshalUDP(buf)
@@ -126,20 +107,6 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	return 0
 }
 
-//may not use
-/*
-func (conn *OnvmConn) udpHandler() {
-	var relayBuf EthFrame
-	for {
-		select {
-		case relayBuf = <-udpChan:
-			fmt.Println("Receive UDP")
-			handToReadChan <- relayBuf
-		}
-	}
-}
-*/
-
 //to regist channel and it connection meta to map
 func (conn *OnvmConn) registerChannel() {
 	udpTuple := ConnMeta{
@@ -153,7 +120,6 @@ func (conn *OnvmConn) registerChannel() {
 
 func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	// Read Config
-	//config := &Config{}//move to global
 	var ipIdConfig string
 	if dir, err := os.Getwd(); err != nil {
 		ipIdConfig = "./ipid.yaml"
@@ -178,20 +144,13 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	//register
 	conn.registerChannel()
 
-	fmt.Println("uduck_Start onvm_init")
-	//	C.onvm_init(&conn.nf_ctx, C.int(config.ServiceID))
-	//C.onvmInit(conn.nf_ctx, C.int(1))
-
 	pktmbuf_pool = C.rte_mempool_lookup(C.CString("MProc_pktmbuf_pool"))
 	if pktmbuf_pool == nil {
 		return nil, fmt.Errorf("pkt alloc from pool failed")
 	}
 
-	//	go conn.udpHandler() //no use
-	go C.onvm_nflib_run(conn.nf_ctx)
-	time.Sleep(time.Duration(5) * time.Second)
+	go C.onvm_nflib_run(nf_ctx)
 
-	fmt.Printf("ListenUDP: %s\n", network)
 	return conn, nil
 }
 
@@ -202,7 +161,7 @@ func (conn *OnvmConn) LocalAddr() net.Addr {
 
 func (conn *OnvmConn) Close() {
 
-	C.onvm_nflib_stop(conn.nf_ctx)
+	C.onvm_nflib_stop(nf_ctx)
 	//deregister channel
 	udpMeta := &ConnMeta{
 		conn.laddr.IP.String(),
@@ -219,26 +178,17 @@ func (conn *OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
 	//look up table to get id
 	ID, err := ipToID(addr.IP)
 	if err != nil {
-		fmt.Println("%+v", err)
 		return 0, err
 	}
 	success_send_len = len(b) //???ONVM has functon to get it?-->right now onvm_send_pkt return void
 	tempBuffer := marshalUDP(b, addr, conn.laddr)
 	buffer_ptr = getCPtrOfByteData(tempBuffer)
-	C.onvm_send_pkt(buffer_ptr, C.int(ID), conn.nf_ctx, C.int(len(tempBuffer))) //C.onvm_send_pkt havn't write?
+	C.onvm_send_pkt(buffer_ptr, C.int(ID), nf_ctx, C.int(len(tempBuffer))) //C.onvm_send_pkt havn't write?
 
 	return success_send_len, err
 }
 
 func (conn *OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
-	/*
-	   	var ethFame EthFrame
-	       ethFame = <- handToReadChan
-	       recvLength := ethFame.frame_len
-	   	header_len := 80//need to get whole length include layer23
-	       buf := C.GoBytes(unsafe.Pointer(ethFame.frame),C.int(recvLength+header_len))
-	       umsBuf,raddr := unMarshalUDP(buf)
-	*/
 	var pktMeta PktMeta
 	pktMeta = <-conn.udpChan
 	recvLength := pktMeta.payloadLen
