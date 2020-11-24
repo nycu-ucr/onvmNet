@@ -44,20 +44,13 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,i
     uint32_t i;
     uint32_t pkts_generated;
     struct rte_mempool *pktmbuf_pool;
-
-    char msg[50] = "Hello! This is uduck! ";
-
-    printf("uduck_Acquire space from mempool\n");
-    printf("Destination ID: %d\n", service_id);
-    pkts_generated = 0;
+  	
+	pkts_generated = 0;
     pktmbuf_pool = rte_mempool_lookup(PKTMBUF_POOL_NAME);
     if (pktmbuf_pool == NULL) {
         onvm_nflib_stop(ctx);
         rte_exit(EXIT_FAILURE, "Cannot find mbuf pool!\n");
     }
-
-    // create a packet
-    printf("Creating 1 packet for sending\n");
 
     struct onvm_pkt_meta *pmeta;
     struct ether_hdr *ehdr;
@@ -69,8 +62,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,i
     }
 
     /*set up ether header and set new packet size*/
-    //ehdr = (struct ether_hdr *)rte_pktmbuf_append(pkt, buff_length);
-    ehdr = (struct ether_hdr *)rte_pktmbuf_append(pkt, 64);
+    ehdr = (struct ether_hdr *)rte_pktmbuf_append(pkt, buff_length);
 
     /*using manager mac addr for source
      *using input string for dest addr
@@ -88,8 +80,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,i
 
     // fill out the meta data of the packet
     pmeta = onvm_get_pkt_meta(pkt);
-    //pmeta->destination = service_id;
-    pmeta->destination = 2;
+    pmeta->destination = service_id;
     pmeta->action = ONVM_NF_ACTION_TONF;
     //pmeta->flags = ONVM_SET_BIT(0, SPEED_TESTER_BIT);
     //pkt->hash.rss = i;
@@ -97,16 +88,11 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,i
     pkt->port = 0;
     pkt->data_len=buff_length;//???
     /* Copy the packet into the rte_mbuf data section */
-    //rte_memcpy(rte_pktmbuf_mtod(pkt, char *), buff, buff_length);
-    rte_memcpy(rte_pktmbuf_mtod(pkt, char *), msg, strlen(msg));
+    rte_memcpy(rte_pktmbuf_mtod(pkt, char *), buff, buff_length);
     pkts_generated = 1;
 
     // send out the generated packet
-    printf("uduck_ready to send!\n");
     onvm_nflib_return_pkt(ctx->nf, pkt);
-    printf("uduck_send successfully!\n");
-
-
 
     /* Exit if packets were unexpectedly not created */
     if (pkts_generated == 0) {
