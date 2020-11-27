@@ -7,7 +7,7 @@
 #define LOCAL_EXPERIMENTAL_ETHER 0x88B5
 
 static uint16_t packet_size = 64;
-static uint8_t d_addr_bytes[ETHER_ADDR_LEN];
+static uint8_t d_addr_bytes[RTE_ETHER_ADDR_LEN];
 
 //typedef int GoInt;
 //extern int Handler(struct rte_mbuf*, struct onvm_pkt_meta*, struct onvm_nf_local_ctx*);
@@ -53,7 +53,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,i
     }
 
     struct onvm_pkt_meta *pmeta;
-    struct ether_hdr *ehdr;
+    struct rte_ether_hdr *ehdr;
 
     struct rte_mbuf *pkt = rte_pktmbuf_alloc(pktmbuf_pool);
     if (pkt == NULL) {
@@ -62,7 +62,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,i
     }
 
     /*set up ether header and set new packet size*/
-    ehdr = (struct ether_hdr *)rte_pktmbuf_append(pkt, buff_length);
+    ehdr = (struct rte_ether_hdr *)rte_pktmbuf_append(pkt, buff_length);
 
     /*using manager mac addr for source
      *using input string for dest addr
@@ -72,7 +72,7 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,i
         onvm_get_fake_macaddr(&ehdr->s_addr);
     }
 
-    for (i = 0; i < ETHER_ADDR_LEN; ++i) {
+    for (i = 0; i < RTE_ETHER_ADDR_LEN; ++i) {
         ehdr->d_addr.addr_bytes[i] = d_addr_bytes[i];
     }
 
