@@ -1,4 +1,4 @@
-module github.com/calee0219/onvmNet
+module github.com/nctu-ucr/onvmNet
 
 go 1.15
 
