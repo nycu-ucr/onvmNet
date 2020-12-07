@@ -454,16 +454,11 @@ WriteTo implement the PacketConn WriteTo method
 func (conn *ONVMConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	var success_send_len int
 	var buffer_ptr *C.char //point to the head of byte data
-	IPString := addr.String()
-	ipStr, portStr, err := net.SplitHostPort(IPString)
-	if err != nil {
-	}
-	portInt, err := strconv.Atoi(portStr)
-	if err != nil {
-	}
-	tempAddr := &net.UDPAddr{
-		IP:   net.ParseIP(ipStr),
-		Port: portInt,
+
+	tempAddr, ok := addr.(*net.UDPAddr)
+	if !ok {
+		err := fmt.Errorf("WriteTo:can't convert to UDPAddr")
+		return 0, err
 	}
 	//look up table to get id
 	ID, err := ipToID(tempAddr.IP)
