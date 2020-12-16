@@ -139,7 +139,7 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	if os.Getenv("IPIDConfig") != "" {
 		ipIdConfig = os.Getenv("IPIDConfig")
 	}
-	fmt.Printf("Read config from %s", ipIdConfig)
+	fmt.Printf("Read config from %s\n", ipIdConfig)
 	if yamlFile, err := ioutil.ReadFile(ipIdConfig); err != nil {
 		panic(err)
 	} else {
@@ -182,6 +182,7 @@ func (conn *OnvmConn) Close() error {
 	return nil
 }
 
+/*
 func (conn *OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
 	var success_send_len int
 	var buffer_ptr *C.char //point to the head of byte data
@@ -197,7 +198,7 @@ func (conn *OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
 
 	return success_send_len, err
 }
-
+*/
 func (conn *OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
 	var pktMeta PktMeta
 	pktMeta = <-conn.udpChan
@@ -225,7 +226,8 @@ func ipToID(ip net.IP) (Id int, err error) {
 	return
 }
 
-func marshalUDP(b []byte, raddr *net.UDPAddr, laddr *net.UDPAddr) []byte {
+//func marshalUDP(b []byte, raddr *net.UDPAddr, laddr *net.UDPAddr) []byte {
+func marshalUDP(b []byte, raddr *ONVMAddr, laddr *ONVMAddr) []byte {
 	//interfacebyname may need to modify,not en0
 	/*
 		ifi ,err :=net.InterfaceByName("en0")
@@ -279,7 +281,8 @@ func getCPtrOfByteData(b []byte) *C.char {
 	return ptr
 }
 
-func unMarshalUDP(input []byte) (payLoad []byte, rAddr *net.UDPAddr) {
+//func unMarshalUDP(input []byte) (payLoad []byte, rAddr *net.UDPAddr) {
+func unMarshalUDP(input []byte) (payLoad []byte, rAddr *ONVMAddr) {
 	//Unmarshaludp header and get the information(ip port) from header
 	var rPort int
 	var rIp net.IP
@@ -301,7 +304,7 @@ func unMarshalUDP(input []byte) (payLoad []byte, rAddr *net.UDPAddr) {
 		payLoad = udp.Payload
 	}
 
-	rAddr = &net.UDPAddr{
+	rAddr = &ONVMAddr{
 		IP:   rIp,
 		Port: rPort,
 	}
@@ -313,9 +316,9 @@ func unMarshalUDP(input []byte) (payLoad []byte, rAddr *net.UDPAddr) {
 ONVMConn to implement the interface of net.PacketConn and  net.Conn
 *****************************************************************/
 type ONVMConn struct {
-	laddr   *net.UDPAddr
-	loaddr  *ONVMAddr
-	udpChan chan PktMeta
+	ludpaddr  *net.UDPAddr
+	lonvmaddr *ONVMAddr
+	udpChan   chan PktMeta
 }
 
 type ONVMAddr struct {
@@ -336,10 +339,12 @@ func (a *ONVMAddr) String() string {
 	if len(a.IP) != 0 {
 		ip = a.IP.String()
 	}
-	return net.JoinHostPort(ip, strconv.Itoa(a.Port))
+	retString := net.JoinHostPort(ip, strconv.Itoa(a.Port)) + "-" + strconv.Itoa(a.ServiceID)
+	//retString := net.JoinHostPort(ip, strconv.Itoa(a.Port))
+	return retString
 }
 
-func (a *ONVMAddr) toUDPAddr() *net.UDPAddr {
+func (a *ONVMAddr) ToUDPAddr() *net.UDPAddr {
 	udpAddr := &net.UDPAddr{
 		IP:   a.IP,
 		Port: a.Port,
@@ -347,7 +352,7 @@ func (a *ONVMAddr) toUDPAddr() *net.UDPAddr {
 	return udpAddr
 }
 
-func UdpToONVMAddr(addr *net.UDPAddr) *ONVMAddr {
+func UDPToONVMAddr(addr *net.UDPAddr) *ONVMAddr {
 	onvmAddr := &ONVMAddr{
 		IP:   addr.IP,
 		Port: addr.Port,
@@ -355,20 +360,20 @@ func UdpToONVMAddr(addr *net.UDPAddr) *ONVMAddr {
 	return onvmAddr
 }
 
-func (conn *ONVMConn) registerChannel() {
+func onvmRegisterChannel(lonvmaddr *ONVMAddr, channel chan PktMeta) {
 	udpTuple := ConnMeta{
-		conn.laddr.IP.String(),
-		conn.laddr.Port,
+		lonvmaddr.IP.String(),
+		lonvmaddr.Port,
 		17,
 	}
-	conn.udpChan = make(chan PktMeta, 1)
-	channelMap[udpTuple] = conn.udpChan
+	channelMap[udpTuple] = channel
 }
 
 /*********************************
 ListenONVM acts like ListenUDP
 *********************************/
-func ListenONVM(network string, laddr *net.UDPAddr) (*ONVMConn, error) {
+//func ListenONVM(network string, laddr *net.UDPAddr) (*ONVMConn, error) {
+func ListenONVM(network string, laddr *ONVMAddr) (*ONVMConn, error) {
 	// Read Config
 	var ipIdConfig string
 	if dir, err := os.Getwd(); err != nil {
@@ -390,9 +395,11 @@ func ListenONVM(network string, laddr *net.UDPAddr) (*ONVMConn, error) {
 
 	conn := &ONVMConn{}
 	//store local addr
-	conn.laddr = laddr
-	//register
-	conn.registerChannel()
+	conn.lonvmaddr = laddr
+	conn.ludpaddr = laddr.ToUDPAddr()
+	//make channel and register to map
+	conn.udpChan = make(chan PktMeta, 1)
+	onvmRegisterChannel(laddr, conn.udpChan)
 	go C.onvm_nflib_run(nf_ctx)
 
 	return conn, nil
@@ -401,16 +408,18 @@ func ListenONVM(network string, laddr *net.UDPAddr) (*ONVMConn, error) {
 /**********************************
 ReadFromOVNM acts like ReadFrom but return UDPAddr
 **********************************/
-func (conn *ONVMConn) ReadFromONVM(b []byte) (int, *net.UDPAddr, error) {
+//func (conn *ONVMConn) ReadFromONVM(b []byte) (int, *net.UDPAddr, error) {
+func (conn *ONVMConn) ReadFromONVM(b []byte) (int, *ONVMAddr, error) {
 	var pktMeta PktMeta
 	pktMeta = <-conn.udpChan
 	recvLength := pktMeta.payloadLen
 	copy(b, *(pktMeta.payloadPtr))
-	raddr := &net.UDPAddr{
+	ronvmaddr := &ONVMAddr{
 		IP:   pktMeta.srcIp,
 		Port: pktMeta.srcPort,
+		//ServiceID: ?,
 	}
-	return recvLength, raddr, nil
+	return recvLength, ronvmaddr, nil
 }
 
 /**********************************
@@ -421,17 +430,18 @@ func (conn *ONVMConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	pktMeta = <-conn.udpChan
 	recvLength := pktMeta.payloadLen
 	copy(b, *(pktMeta.payloadPtr))
-	raddr := &net.UDPAddr{
+	ronvmaddr := &ONVMAddr{
 		IP:   pktMeta.srcIp,
 		Port: pktMeta.srcPort,
 	}
-	return recvLength, raddr, nil
+	return recvLength, ronvmaddr, nil
 }
 
 /********************************
 WriteToONVM acts like WriteTo but take UDPAddr
 ********************************/
-func (conn *ONVMConn) WriteToONVM(b []byte, addr *net.UDPAddr) (int, error) {
+//func (conn *ONVMConn) WriteToONVM(b []byte, addr *net.UDPAddr) (int, error) {
+func (conn *ONVMConn) WriteToONVM(b []byte, addr *ONVMAddr) (int, error) {
 	var success_send_len int
 	var buffer_ptr *C.char //point to the head of byte data
 
@@ -441,7 +451,7 @@ func (conn *ONVMConn) WriteToONVM(b []byte, addr *net.UDPAddr) (int, error) {
 		return 0, err
 	}
 	success_send_len = len(b) //???ONVM has functon to get it?-->right now onvm_send_pkt return void
-	tempBuffer := marshalUDP(b, addr, conn.laddr)
+	tempBuffer := marshalUDP(b, addr, conn.lonvmaddr)
 	buffer_ptr = getCPtrOfByteData(tempBuffer)
 	C.onvm_send_pkt(buffer_ptr, C.int(ID), nf_ctx, C.int(len(tempBuffer))) //C.onvm_send_pkt havn't write?
 
@@ -455,9 +465,9 @@ func (conn *ONVMConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	var success_send_len int
 	var buffer_ptr *C.char //point to the head of byte data
 
-	tempAddr, ok := addr.(*net.UDPAddr)
+	tempAddr, ok := addr.(*ONVMAddr)
 	if !ok {
-		err := fmt.Errorf("WriteTo:can't convert to UDPAddr")
+		err := fmt.Errorf("WriteTo:can't convert to ONVMAddr")
 		return 0, err
 	}
 	//look up table to get id
@@ -466,7 +476,7 @@ func (conn *ONVMConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 		return 0, err
 	}
 	success_send_len = len(b) //???ONVM has functon to get it?-->right now onvm_send_pkt return void
-	tempBuffer := marshalUDP(b, tempAddr, conn.laddr)
+	tempBuffer := marshalUDP(b, tempAddr, conn.lonvmaddr)
 	buffer_ptr = getCPtrOfByteData(tempBuffer)
 	C.onvm_send_pkt(buffer_ptr, C.int(ID), nf_ctx, C.int(len(tempBuffer))) //C.onvm_send_pkt havn't write?
 
@@ -479,8 +489,8 @@ Close close the connection and deregister the connect information
 func (conn *ONVMConn) Close() error {
 	//deregister channel
 	udpMeta := &ConnMeta{
-		conn.laddr.IP.String(),
-		conn.laddr.Port,
+		conn.lonvmaddr.IP.String(),
+		conn.lonvmaddr.Port,
 		17,
 	}
 	delete(channelMap, *udpMeta) //delete from map
@@ -492,8 +502,8 @@ func (conn *ONVMConn) Close() error {
 LocalAddr returns the local network
 *********************************/
 func (conn *ONVMConn) LocalAddr() net.Addr {
-	laddr := conn.laddr
-	return laddr
+	fmt.Println(conn.lonvmaddr)
+	return conn.lonvmaddr
 }
 
 /*********************************
