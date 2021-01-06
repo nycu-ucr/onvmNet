@@ -185,7 +185,6 @@ func (conn *OnvmConn) Close() error {
 	return nil
 }
 
-
 func (conn *OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
 	var success_send_len int
 	var buffer_ptr *C.char //point to the head of byte data
@@ -201,7 +200,6 @@ func (conn *OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
 
 	return success_send_len, err
 }
-
 func (conn *OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
 	var pktMeta PktMeta
 	pktMeta = <-conn.udpChan
