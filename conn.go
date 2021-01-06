@@ -45,6 +45,8 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"strconv"
+	"time"
 	"unsafe"
 )
 
@@ -76,11 +78,12 @@ type Config struct {
 	} `yaml:"IPIDMap"`
 }
 
+/*
 type OnvmConn struct {
 	laddr   *net.UDPAddr
 	udpChan chan PktMeta
 }
-
+*/
 func init() {
 	C.onvm_init(&nf_ctx)
 }
@@ -115,6 +118,7 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	return 0
 }
 
+/*
 //to regist channel and it connection meta to map
 func (conn *OnvmConn) registerChannel() {
 	udpTuple := ConnMeta{
@@ -125,6 +129,7 @@ func (conn *OnvmConn) registerChannel() {
 	conn.udpChan = make(chan PktMeta, 1)
 	channelMap[udpTuple] = conn.udpChan
 }
+
 
 func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	// Read Config
@@ -137,7 +142,7 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
 	if os.Getenv("IPIDConfig") != "" {
 		ipIdConfig = os.Getenv("IPIDConfig")
 	}
-	fmt.Printf("Read config from %s", ipIdConfig)
+	fmt.Printf("Read config from %s\n", ipIdConfig)
 	if yamlFile, err := ioutil.ReadFile(ipIdConfig); err != nil {
 		panic(err)
 	} else {
@@ -195,7 +200,6 @@ func (conn *OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
 
 	return success_send_len, err
 }
-
 func (conn *OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
 	var pktMeta PktMeta
 	pktMeta = <-conn.udpChan
@@ -208,7 +212,7 @@ func (conn *OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
 	return recvLength, raddr, nil
 
 }
-
+*/
 func ipToID(ip net.IP) (Id int, err error) {
 	Id = -1
 	for i := range config.IPIDMap {
@@ -223,7 +227,8 @@ func ipToID(ip net.IP) (Id int, err error) {
 	return
 }
 
-func marshalUDP(b []byte, raddr *net.UDPAddr, laddr *net.UDPAddr) []byte {
+//func marshalUDP(b []byte, raddr *net.UDPAddr, laddr *net.UDPAddr) []byte {
+func marshalUDP(b []byte, raddr *ONVMAddr, laddr *ONVMAddr) []byte {
 	//interfacebyname may need to modify,not en0
 	/*
 		ifi ,err :=net.InterfaceByName("en0")
@@ -277,7 +282,8 @@ func getCPtrOfByteData(b []byte) *C.char {
 	return ptr
 }
 
-func unMarshalUDP(input []byte) (payLoad []byte, rAddr *net.UDPAddr) {
+//func unMarshalUDP(input []byte) (payLoad []byte, rAddr *net.UDPAddr) {
+func unMarshalUDP(input []byte) (payLoad []byte, rAddr *ONVMAddr) {
 	//Unmarshaludp header and get the information(ip port) from header
 	var rPort int
 	var rIp net.IP
@@ -299,10 +305,230 @@ func unMarshalUDP(input []byte) (payLoad []byte, rAddr *net.UDPAddr) {
 		payLoad = udp.Payload
 	}
 
-	rAddr = &net.UDPAddr{
+	rAddr = &ONVMAddr{
 		IP:   rIp,
 		Port: rPort,
 	}
 
 	return
+}
+
+/*****************************************************************
+ONVMConn to implement the interface of net.PacketConn and  net.Conn
+*****************************************************************/
+type ONVMConn struct {
+	ludpaddr  *net.UDPAddr
+	lonvmaddr *ONVMAddr
+	udpChan   chan PktMeta
+}
+
+type ONVMAddr struct {
+	IP        net.IP
+	Port      int
+	ServiceID int
+}
+
+func (a *ONVMAddr) Network() string {
+	return "onvm"
+}
+
+func (a *ONVMAddr) String() string {
+	if a == nil {
+		return "<nil>"
+	}
+	ip := ""
+	if len(a.IP) != 0 {
+		ip = a.IP.String()
+	}
+	retString := net.JoinHostPort(ip, strconv.Itoa(a.Port)) + "-" + strconv.Itoa(a.ServiceID)
+	//retString := net.JoinHostPort(ip, strconv.Itoa(a.Port))
+	return retString
+}
+
+func (a *ONVMAddr) ToUDPAddr() *net.UDPAddr {
+	udpAddr := &net.UDPAddr{
+		IP:   a.IP,
+		Port: a.Port,
+	}
+	return udpAddr
+}
+
+func UDPToONVMAddr(addr *net.UDPAddr) *ONVMAddr {
+	onvmAddr := &ONVMAddr{
+		IP:   addr.IP,
+		Port: addr.Port,
+	}
+	return onvmAddr
+}
+
+func onvmRegisterChannel(lonvmaddr *ONVMAddr, channel chan PktMeta) {
+	udpTuple := ConnMeta{
+		lonvmaddr.IP.String(),
+		lonvmaddr.Port,
+		17,
+	}
+	channelMap[udpTuple] = channel
+}
+
+/*********************************
+ListenONVM acts like ListenUDP
+*********************************/
+//func ListenONVM(network string, laddr *net.UDPAddr) (*ONVMConn, error) {
+func ListenONVM(network string, laddr *ONVMAddr) (*ONVMConn, error) {
+	// Read Config
+	var ipIdConfig string
+	if dir, err := os.Getwd(); err != nil {
+		ipIdConfig = "./ipid.yaml"
+	} else {
+		ipIdConfig = dir + "/ipid.yaml"
+	}
+	if os.Getenv("IPIDConfig") != "" {
+		ipIdConfig = os.Getenv("IPIDConfig")
+	}
+	fmt.Printf("Read config from %s", ipIdConfig)
+	if yamlFile, err := ioutil.ReadFile(ipIdConfig); err != nil {
+		panic(err)
+	} else {
+		if unMarshalErr := yaml.Unmarshal(yamlFile, config); unMarshalErr != nil {
+			panic(unMarshalErr)
+		}
+	}
+
+	conn := &ONVMConn{}
+	//store local addr
+	conn.lonvmaddr = laddr
+	conn.ludpaddr = laddr.ToUDPAddr()
+	//make channel and register to map
+	conn.udpChan = make(chan PktMeta, 1)
+	onvmRegisterChannel(laddr, conn.udpChan)
+	go C.onvm_nflib_run(nf_ctx)
+
+	return conn, nil
+}
+
+/**********************************
+ReadFromOVNM acts like ReadFrom but return UDPAddr
+**********************************/
+//func (conn *ONVMConn) ReadFromONVM(b []byte) (int, *net.UDPAddr, error) {
+func (conn *ONVMConn) ReadFromONVM(b []byte) (int, *ONVMAddr, error) {
+	var pktMeta PktMeta
+	pktMeta = <-conn.udpChan
+	recvLength := pktMeta.payloadLen
+	copy(b, *(pktMeta.payloadPtr))
+	ronvmaddr := &ONVMAddr{
+		IP:   pktMeta.srcIp,
+		Port: pktMeta.srcPort,
+		//ServiceID: ?,
+	}
+	return recvLength, ronvmaddr, nil
+}
+
+/**********************************
+ReadFrom implements the PacketConn ReadFrom method
+**********************************/
+func (conn *ONVMConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	var pktMeta PktMeta
+	pktMeta = <-conn.udpChan
+	recvLength := pktMeta.payloadLen
+	copy(b, *(pktMeta.payloadPtr))
+	ronvmaddr := &ONVMAddr{
+		IP:   pktMeta.srcIp,
+		Port: pktMeta.srcPort,
+	}
+	return recvLength, ronvmaddr, nil
+}
+
+/********************************
+WriteToONVM acts like WriteTo but take UDPAddr
+********************************/
+//func (conn *ONVMConn) WriteToONVM(b []byte, addr *net.UDPAddr) (int, error) {
+func (conn *ONVMConn) WriteToONVM(b []byte, addr *ONVMAddr) (int, error) {
+	var success_send_len int
+	var buffer_ptr *C.char //point to the head of byte data
+
+	//look up table to get id
+	ID, err := ipToID(addr.IP)
+	if err != nil {
+		return 0, err
+	}
+	success_send_len = len(b) //???ONVM has functon to get it?-->right now onvm_send_pkt return void
+	tempBuffer := marshalUDP(b, addr, conn.lonvmaddr)
+	buffer_ptr = getCPtrOfByteData(tempBuffer)
+	C.onvm_send_pkt(buffer_ptr, C.int(ID), nf_ctx, C.int(len(tempBuffer))) //C.onvm_send_pkt havn't write?
+
+	return success_send_len, nil
+}
+
+/*******************************
+WriteTo implement the PacketConn WriteTo method
+********************************/
+func (conn *ONVMConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	var success_send_len int
+	var buffer_ptr *C.char //point to the head of byte data
+
+	tempAddr, ok := addr.(*ONVMAddr)
+	if !ok {
+		err := fmt.Errorf("WriteTo:can't convert to ONVMAddr")
+		return 0, err
+	}
+	//look up table to get id
+	ID, err := ipToID(tempAddr.IP)
+	if err != nil {
+		return 0, err
+	}
+	success_send_len = len(b) //???ONVM has functon to get it?-->right now onvm_send_pkt return void
+	tempBuffer := marshalUDP(b, tempAddr, conn.lonvmaddr)
+	buffer_ptr = getCPtrOfByteData(tempBuffer)
+	C.onvm_send_pkt(buffer_ptr, C.int(ID), nf_ctx, C.int(len(tempBuffer))) //C.onvm_send_pkt havn't write?
+
+	return success_send_len, err
+}
+
+/*********************************
+Close close the connection and deregister the connect information
+*********************************/
+func (conn *ONVMConn) Close() error {
+	//deregister channel
+	udpMeta := &ConnMeta{
+		conn.lonvmaddr.IP.String(),
+		conn.lonvmaddr.Port,
+		17,
+	}
+	delete(channelMap, *udpMeta) //delete from map
+	C.onvm_nflib_stop(nf_ctx)
+	return nil
+}
+
+/*********************************
+LocalAddr returns the local network
+*********************************/
+func (conn *ONVMConn) LocalAddr() net.Addr {
+	fmt.Println(conn.lonvmaddr)
+	return conn.lonvmaddr
+}
+
+/*********************************
+Following functions are to implement the interface of net.PacketConn and net.Conn,
+but not use in ONVMConn project,just a empty shell
+*********************************/
+//In PacketConn and Conn interface
+func (conn *ONVMConn) SetDeadline(t time.Time) error {
+	return nil
+}
+func (conn *ONVMConn) SetReadDeadline(t time.Time) error {
+	return nil
+}
+func (conn *ONVMConn) SetWriteDeadline(t time.Time) error {
+	return nil
+}
+
+//In Conn interface
+func (conn *ONVMConn) Read(b []byte) (n int, err error) {
+	return 0, nil
+}
+func (conn *ONVMConn) Write(b []byte) (n int, err error) {
+	return 0, nil
+}
+func (conn *ONVMConn) RemoteAddr() net.Addr {
+	return nil
 }
