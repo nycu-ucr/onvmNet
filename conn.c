@@ -90,11 +90,11 @@ void onvm_send_pkt(char * buff, int service_id, struct onvm_nf_local_ctx * ctx,i
     /* Copy the packet into the rte_mbuf data section */
     rte_memcpy(rte_pktmbuf_mtod(pkt, char *), buff, buff_length);
     pkts_generated = 1;
-    FILE *fp;
-	fp = fopen("/root/chuTest/dump.txt", "a");
+//    FILE *fp;
+//	fp = fopen("/root/chuTest/dump.txt", "a");
 	//fprintf(fp, "\n-----------------------\n fprintf... %d<->%d\n", count, port);
-	rte_pktmbuf_dump(fp, pkt, 1000);
-	fclose(fp);
+//	rte_pktmbuf_dump(fp, pkt, 1000);
+//	fclose(fp);
 
 
     // send out the generated packet
