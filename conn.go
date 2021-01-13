@@ -78,12 +78,6 @@ type Config struct {
 	} `yaml:"IPIDMap"`
 }
 
-/*
-type OnvmConn struct {
-	laddr   *net.UDPAddr
-	udpChan chan PktMeta
-}
-*/
 func init() {
 	C.onvm_init(&nf_ctx)
 }
@@ -118,101 +112,6 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	return 0
 }
 
-/*
-//to regist channel and it connection meta to map
-func (conn *OnvmConn) registerChannel() {
-	udpTuple := ConnMeta{
-		conn.laddr.IP.String(),
-		conn.laddr.Port,
-		17,
-	}
-	conn.udpChan = make(chan PktMeta, 1)
-	channelMap[udpTuple] = conn.udpChan
-}
-
-
-func ListenUDP(network string, laddr *net.UDPAddr) (*OnvmConn, error) {
-	// Read Config
-	var ipIdConfig string
-	if dir, err := os.Getwd(); err != nil {
-		ipIdConfig = "./ipid.yaml"
-	} else {
-		ipIdConfig = dir + "/ipid.yaml"
-	}
-	if os.Getenv("IPIDConfig") != "" {
-		ipIdConfig = os.Getenv("IPIDConfig")
-	}
-	fmt.Printf("Read config from %s\n", ipIdConfig)
-	if yamlFile, err := ioutil.ReadFile(ipIdConfig); err != nil {
-		panic(err)
-	} else {
-		if unMarshalErr := yaml.Unmarshal(yamlFile, config); unMarshalErr != nil {
-			panic(unMarshalErr)
-		}
-	}
-
-	conn := &OnvmConn{}
-	//store local addr
-	conn.laddr = laddr
-	//register
-	conn.registerChannel()
-
-	pktmbuf_pool = C.rte_mempool_lookup(C.CString("MProc_pktmbuf_pool"))
-	if pktmbuf_pool == nil {
-		return nil, fmt.Errorf("pkt alloc from pool failed")
-	}
-
-	go C.onvm_nflib_run(nf_ctx)
-
-	return conn, nil
-}
-
-func (conn *OnvmConn) LocalAddr() net.Addr {
-	laddr := conn.laddr
-	return laddr
-}
-
-func (conn *OnvmConn) Close() error {
-
-	C.onvm_nflib_stop(nf_ctx)
-	//deregister channel
-	udpMeta := &ConnMeta{
-		conn.laddr.IP.String(),
-		conn.laddr.Port,
-		17,
-	}
-	delete(channelMap, *udpMeta) //delete from map
-	return nil
-}
-
-func (conn *OnvmConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
-	var success_send_len int
-	var buffer_ptr *C.char //point to the head of byte data
-	//look up table to get id
-	ID, err := ipToID(addr.IP)
-	if err != nil {
-		return 0, err
-	}
-	success_send_len = len(b) //???ONVM has functon to get it?-->right now onvm_send_pkt return void
-	tempBuffer := marshalUDP(b, addr, conn.laddr)
-	buffer_ptr = getCPtrOfByteData(tempBuffer)
-	C.onvm_send_pkt(buffer_ptr, C.int(ID), nf_ctx, C.int(len(tempBuffer))) //C.onvm_send_pkt havn't write?
-
-	return success_send_len, err
-}
-func (conn *OnvmConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
-	var pktMeta PktMeta
-	pktMeta = <-conn.udpChan
-	recvLength := pktMeta.payloadLen
-	copy(b, *(pktMeta.payloadPtr))
-	raddr := &net.UDPAddr{
-		IP:   pktMeta.srcIp,
-		Port: pktMeta.srcPort,
-	}
-	return recvLength, raddr, nil
-
-}
-*/
 func ipToID(ip net.IP) (Id int, err error) {
 	Id = -1
 	for i := range config.IPIDMap {
@@ -385,7 +284,7 @@ func ListenONVM(network string, laddr *ONVMAddr) (*ONVMConn, error) {
 	if os.Getenv("IPIDConfig") != "" {
 		ipIdConfig = os.Getenv("IPIDConfig")
 	}
-	fmt.Printf("Read config from %s", ipIdConfig)
+	fmt.Printf("Read config from %s\n", ipIdConfig)
 	if yamlFile, err := ioutil.ReadFile(ipIdConfig); err != nil {
 		panic(err)
 	} else {
@@ -503,7 +402,6 @@ func (conn *ONVMConn) Close() error {
 LocalAddr returns the local network
 *********************************/
 func (conn *ONVMConn) LocalAddr() net.Addr {
-	fmt.Println(conn.lonvmaddr)
 	return conn.lonvmaddr
 }
 
