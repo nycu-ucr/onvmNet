@@ -88,10 +88,10 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 	pktCount++
 	recvLen := int(C.pktmbuf_data_len_wrapper(pkt))                               //length include header??//int(C.rte_pktmbuf_data_len(pkt))
 	buf := C.GoBytes(unsafe.Pointer(C.pktmbuf_mtod_wrapper(pkt)), C.int(recvLen)) //turn c memory to go memory
-	umsBuf, raddr := unMarshalUDP(buf)
+	umsBuf, raddr, destAddr := unMarshalUDP(buf)
 	udpMeta := ConnMeta{
-		raddr.IP.String(),
-		raddr.Port,
+		destAddr.IP.String(),
+		destAddr.Port,
 		17,
 	}
 	pktMeta := PktMeta{
@@ -100,6 +100,7 @@ func Handler(pkt *C.struct_rte_mbuf, meta *C.struct_onvm_pkt_meta,
 		len(umsBuf),
 		&umsBuf,
 	}
+
 	channel, ok := channelMap[udpMeta]
 	if ok {
 		channel <- pktMeta
@@ -182,10 +183,12 @@ func getCPtrOfByteData(b []byte) *C.char {
 }
 
 //func unMarshalUDP(input []byte) (payLoad []byte, rAddr *net.UDPAddr) {
-func unMarshalUDP(input []byte) (payLoad []byte, rAddr *ONVMAddr) {
+func unMarshalUDP(input []byte) (payLoad []byte, rAddr *ONVMAddr, destAddr *ONVMAddr) {
 	//Unmarshaludp header and get the information(ip port) from header
 	var rPort int
 	var rIp net.IP
+	var destIp net.IP
+	var destPort int
 	ethPacket := gopacket.NewPacket(
 		input,
 		layers.LayerTypeEthernet,
@@ -196,17 +199,24 @@ func unMarshalUDP(input []byte) (payLoad []byte, rAddr *ONVMAddr) {
 	if ipLayer != nil {
 		ip, _ := ipLayer.(*layers.IPv4)
 		rIp = ip.SrcIP
+		destIp = ip.DstIP
 	}
 	udpLayer := ethPacket.Layer(layers.LayerTypeUDP)
 	if udpLayer != nil {
 		udp, _ := udpLayer.(*layers.UDP)
 		rPort = int(udp.SrcPort)
+		destPort = int(udp.DstPort)
 		payLoad = udp.Payload
 	}
 
 	rAddr = &ONVMAddr{
 		IP:   rIp,
 		Port: rPort,
+	}
+
+	destAddr = &ONVMAddr{
+		IP:   destIp,
+		Port: destPort,
 	}
 
 	return
